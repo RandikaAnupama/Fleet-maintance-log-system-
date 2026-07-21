@@ -2,7 +2,6 @@ import { useState } from "react";
 import { driversSeed } from "../data/mockData";
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
-import StatusBadge from "../components/StatusBadge";
 
 export default function Drivers() {
   const [rows, setRows] = useState(driversSeed);
@@ -54,7 +53,6 @@ const [formData, setFormData] = useState({
     { key: "license", label: "License Number" },
     { key: "phone", label: "Phone" },
     { key: "vehicle", label: "Assigned Vehicle" },
-    { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
     {
   key: "actions",
   label: "Actions",
