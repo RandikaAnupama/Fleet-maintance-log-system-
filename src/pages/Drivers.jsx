@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge";
 export default function Drivers() {
   const [rows, setRows] = useState(driversSeed);
   const [showModal, setShowModal] = useState(false);
+  const [editingDriver, setEditingDriver] = useState(null);
 
 const [formData, setFormData] = useState({
   name: "",
@@ -16,6 +17,7 @@ const [formData, setFormData] = useState({
   status: "ACTIVE"
 });
   const handleSaveDriver = () => {
+
   const newDriver = {
     id: Date.now(),
     name: formData.name,
@@ -25,7 +27,17 @@ const [formData, setFormData] = useState({
     status: "ACTIVE"
   };
 
+  if (editingDriver) {
+  setRows(
+    rows.map((driver) =>
+      driver.id === editingDriver.id
+        ? { ...driver, ...formData }
+        : driver
+    )
+  );
+} else {
   setRows([...rows, newDriver]);
+}
 
   setFormData({
     name: "",
@@ -43,7 +55,40 @@ const [formData, setFormData] = useState({
     { key: "phone", label: "Phone" },
     { key: "vehicle", label: "Assigned Vehicle" },
     { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
-    { key: "actions", label: "Actions", render: (r) => <button className="btn btn-sm btn-outline-danger" onClick={() => setRows(rows.filter(x => x.id !== r.id))}>Delete</button> }
+    {
+  key: "actions",
+  label: "Actions",
+  render: (r) => (
+    <>
+      <button
+  className="btn btn-sm btn-outline-primary me-2"
+  onClick={() => {
+    setEditingDriver(r);
+
+    setFormData({
+      name: r.name,
+      license: r.license,
+      phone: r.phone,
+      vehicle: r.vehicle,
+      status: r.status
+    });
+
+    setShowModal(true);
+  }}
+>
+  Edit
+</button>
+        
+
+      <button
+        className="btn btn-sm btn-outline-danger"
+        onClick={() => setRows(rows.filter(x => x.id !== r.id))}
+      >
+        Delete
+      </button>
+    </>
+  )
+}
   ];
   return (
   <>
