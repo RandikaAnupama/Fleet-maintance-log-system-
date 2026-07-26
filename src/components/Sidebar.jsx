@@ -7,7 +7,6 @@ const adminItems = [
   ["Drivers", "/drivers", "bi-person-badge"],
   ["Issues", "/issues", "bi-exclamation-triangle"],
   ["Maintenance", "/maintenance", "bi-tools"],
-  ["Fuel Logs", "/fuel-logs", "bi-fuel-pump"],
   ["Repair Logs", "/repair-logs", "bi-wrench-adjustable"],
   ["Service Schedule", "/service-schedules", "bi-calendar-check"],
   ["Reports", "/reports", "bi-file-earmark-bar-graph"],
