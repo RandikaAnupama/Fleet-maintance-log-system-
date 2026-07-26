@@ -49,8 +49,18 @@ export default function Maintenance() {
     cost: Number(formData.cost),
     status: formData.status,
   };
+  
+  if (editingMaintenance) {
+  setRows(
+    rows.map((item) =>
+      item.id === editingMaintenance.id ? newMaintenance : item
+    )
+  );
 
+  setEditingMaintenance(null);
+} else {
   setRows([...rows, newMaintenance]);
+}
 
   setFormData({
     vehicle: "",
@@ -71,7 +81,31 @@ export default function Maintenance() {
     { key: "nextDate", label: "Next Service" },
     { key: "cost", label: "Cost", render: (r) => `Rs. ${r.cost.toLocaleString()}` },
     { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
-    { key: "actions", label: "Actions", render: () => <button className="btn btn-sm btn-outline-primary">Edit</button> }
+    {
+      key: "actions",
+      label: "Actions",
+      render: (r) => (
+        <button
+          className="btn btn-sm btn-outline-primary"
+          onClick={() => {
+            setEditingMaintenance(r);
+
+            setFormData({
+              vehicle: r.vehicle,
+              type: r.type,
+              date: r.date,
+              nextDate: r.nextDate,
+              cost: r.cost,
+              status: r.status,
+            });
+
+            setShowModal(true);
+          }}
+        >
+          Edit
+        </button>
+      ),
+    }
   ];
   return <>
     <PageHeader title="Maintenance Logs" subtitle="Maintain the complete service history for each vehicle." action={<button className="btn btn-primary"  onClick={() => setShowModal(true)}><i className="bi bi-plus-lg me-1"></i>Add Maintenance</button>} />
