@@ -21,6 +21,17 @@ export default function Maintenance() {
   const [editingMaintenance, setEditingMaintenance] = useState(null);
 
   const handleSaveMaintenance = () => {
+    if (
+      !formData.vehicle.trim() ||
+      !formData.type.trim() ||
+      !formData.date ||
+      !formData.nextDate ||
+      formData.cost === ""
+        ) 
+      {
+        alert("Please fill in all maintenance details.");
+        return;
+      }
   const newMaintenance = {
     id: Date.now(),
     vehicle: formData.vehicle,
