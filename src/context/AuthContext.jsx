@@ -5,21 +5,21 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(() => {
-    const raw = localStorage.getItem("fleet_auth");
+    const raw = sessionStorage.getItem("fleet_auth");
     return raw ? JSON.parse(raw) : null;
   });
 
   const login = async (credentials) => {
     const result = await authService.login(credentials);
-    localStorage.setItem("fleet_auth", JSON.stringify(result));
-    localStorage.setItem("fleet_token", result.token);
+    sessionStorage.setItem("fleet_auth", JSON.stringify(result));
+    sessionStorage.setItem("fleet_token", result.token);
     setAuth(result);
     return result;
   };
 
   const logout = () => {
-    localStorage.removeItem("fleet_auth");
-    localStorage.removeItem("fleet_token");
+    sessionStorage.removeItem("fleet_auth");
+    sessionStorage.removeItem("fleet_token");
     setAuth(null);
   };
 
