@@ -32,6 +32,14 @@ export default function Maintenance() {
         alert("Please fill in all maintenance details.");
         return;
       }
+        if (Number(formData.cost) <= 0) {
+        alert("Cost must be greater than 0.");
+        return;
+      }
+        if (new Date(formData.nextDate) < new Date(formData.date)) {
+        alert("Next Service Date cannot be earlier than Service Date.");
+        return;
+      }
   const newMaintenance = {
     id: Date.now(),
     vehicle: formData.vehicle,
