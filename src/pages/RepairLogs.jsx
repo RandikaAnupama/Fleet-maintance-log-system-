@@ -17,6 +17,7 @@ export default function RepairLogs() {
 
   const [newGarage, setNewGarage] = useState("");
   const [showGarageModal, setShowGarageModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
   vehicle: "",
   date: "",
@@ -65,6 +66,27 @@ const handleAddGarage = () => {
   setShowGarageModal(false);
 };
 
+const handleEdit = (repair) => {
+  setEditingId(repair.id);
+
+  setFormData({
+    vehicle: repair.vehicle,
+    date: repair.date,
+    garage: repair.garage,
+    description: repair.description,
+    cost: repair.cost,
+    status: repair.status,
+  });
+
+  setShowModal(true);
+};
+
+const handleDelete = (id) => {
+  const confirmDelete = window.confirm( "Are you sure you want to delete this repair record?");
+  if (!confirmDelete) return;
+  setRows((prevRows) => prevRows.filter((row) => row.id !== id));
+};
+
 const handleSave = () => {
   if (
     !formData.vehicle.trim() ||
@@ -93,7 +115,25 @@ const handleSave = () => {
     status: formData.status,
   };
 
+  if (editingId) {
+  setRows((prevRows) =>
+    prevRows.map((row) =>
+      row.id === editingId
+        ? {
+            ...row,
+            vehicle: formData.vehicle,
+            date: formData.date,
+            garage: formData.garage,
+            description: formData.description,
+            cost: Number(formData.cost),
+            status: formData.status,
+          }
+        : row
+    )
+  );
+} else {
   setRows((prevRows) => [...prevRows, newRepair]);
+}
 
   setFormData({
     vehicle: "",
@@ -104,6 +144,7 @@ const handleSave = () => {
     status: "OPEN",
   });
 
+  setEditingId(null);
   setShowModal(false);
 };
   const columns = [
@@ -112,7 +153,20 @@ const handleSave = () => {
     { key: "garage", label: "Garage" },
     { key: "description", label: "Description" },
     { key: "cost", label: "Cost", render: (r) => `Rs. ${r.cost.toLocaleString()}` },
-    { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> }
+    { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
+
+    { key: "actions", label: "Actions", render: (r) => (
+        <div className="d-flex gap-2">
+          <button className="btn btn-sm btn-outline-primary" onClick={() => handleEdit(r)}>
+            Edit
+          </button>
+
+          <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(r.id)}>
+            Delete
+          </button>
+        </div>
+      ),
+    }
   ];
   return <>
     <PageHeader title="Repair Logs" 
@@ -150,12 +204,13 @@ const handleSave = () => {
             <label className="form-label">Garage</label>
               <select className="form-select" name="garage" value={formData.garage} onChange={handleChange}>
                 <option value="">Select Garage</option>
+                <option value="ADD_NEW">+ Add New Garage</option>
                 {garages.map((garage) => (
                   <option key={garage} value={garage}>
                     {garage}
                 </option>
                 ))}
-                <option value="ADD_NEW">+ Add New Garage</option>
+                
               </select>
 
           </div>
@@ -169,7 +224,12 @@ const handleSave = () => {
 
           <div className="mb-3">
             <label className="form-label">Cost (Rs.)</label>
-            <input type="number" className="form-control" name="cost" value={formData.cost} onChange={handleChange} placeholder="Enter repair cost"/>
+            <input type="number" className="form-control" name="cost" value={formData.cost} onChange={handleChange} placeholder="Enter repair cost" min="0" onKeyDown={(e) => {
+                if (["-", "+", "e", "E"].includes(e.key)) {
+                  e.preventDefault();
+                }
+              }}
+            />
           </div>
 
           <div className="mb-3">
