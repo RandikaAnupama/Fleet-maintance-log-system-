@@ -1,13 +1,27 @@
+console.log("SERVER FILE UPDATED");
 require("dotenv").config();
 
-console.log("Step 1: server.js started");
-
 const app = require("./app");
-
-console.log("Step 2: app imported");
+const pool = require("./config/db");
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`✅ Server is running on port ${PORT}`);
-});
+const startServer = async () => {
+  try {
+    const connection = await pool.getConnection();
+
+    console.log("MySQL database connected successfully.");
+
+    connection.release();
+
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("MySQL database connection failed:");
+    console.error(error.message);
+    process.exit(1);
+  }
+};
+
+startServer();
