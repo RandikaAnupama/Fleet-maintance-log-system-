@@ -12,11 +12,11 @@ import Vehicles from "./pages/Vehicles";
 import Drivers from "./pages/Drivers";
 import AdminIssues from "./pages/AdminIssues";
 import Maintenance from "./pages/Maintenance";
-import FuelLogs from "./pages/FuelLogs";
 import RepairLogs from "./pages/RepairLogs";
 import ServiceSchedules from "./pages/ServiceSchedules";
 import Reports from "./pages/Reports";
 import Users from "./pages/Users";
+import Register from "./pages/Register";
 
 import MyVehicle from "./pages/MyVehicle";
 import MaintenanceHistory from "./pages/MaintenanceHistory";
@@ -32,6 +32,7 @@ export default function App() {
         <IssueProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
 
             <Route element={<ProtectedRoute />}>
@@ -45,7 +46,6 @@ export default function App() {
                   <Route path="/drivers" element={<Drivers />} />
                   <Route path="/issues" element={<AdminIssues />} />
                   <Route path="/maintenance" element={<Maintenance />} />
-                  <Route path="/fuel-logs" element={<FuelLogs />} />
                   <Route path="/repair-logs" element={<RepairLogs />} />
                   <Route
                     path="/service-schedules"
