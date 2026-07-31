@@ -51,8 +51,6 @@ const register = async (req, res) => {
     });
     }
 
-    console.log("JWT_SECRET =", process.env.JWT_SECRET);
-
     const token = jwt.sign(
         {
             id: user.id,
@@ -83,7 +81,7 @@ const register = async (req, res) => {
 
         res.status(500).json({
         success: false,
-        message: error.message,
+        message: "Login Failed.",
         });
     }
     };
