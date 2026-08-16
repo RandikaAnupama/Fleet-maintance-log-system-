@@ -1,6 +1,5 @@
 const driverModel = require("../models/driverModel");
 
-// Get all drivers
 const getAllDrivers = async (req, res) => {
   try {
     const drivers = await driverModel.getAllDrivers();
@@ -19,7 +18,6 @@ const getAllDrivers = async (req, res) => {
   }
 };
 
-// Get driver by ID
 const getDriverById = async (req, res) => {
   try {
     const driver = await driverModel.getDriverById(req.params.id);
@@ -45,7 +43,6 @@ const getDriverById = async (req, res) => {
   }
 };
 
-// Create driver
 const createDriver = async (req, res) => {
   try {
     const {
@@ -63,6 +60,25 @@ const createDriver = async (req, res) => {
         message: "Full name and license number are required.",
       });
     }
+
+    if (email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+            success: false,
+            message: "Invalid email address.",
+            });
+        }
+        }
+    
+    if (phone && !/^[0-9]{10}$/.test(phone)) {
+        return res.status(400).json({
+            success: false,
+            message: "Phone number must contain 10 digits.",
+        });
+        }
+
 
     const existingDriver =
       await driverModel.findDriverByLicense(license_number);
@@ -98,7 +114,6 @@ const createDriver = async (req, res) => {
   }
 };
 
-// Update driver
 const updateDriver = async (req, res) => {
   try {
     const { id } = req.params;
@@ -133,7 +148,6 @@ const updateDriver = async (req, res) => {
   }
 };
 
-// Deactivate driver
 const deactivateDriver = async (req, res) => {
   try {
     const { id } = req.params;

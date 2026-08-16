@@ -1,6 +1,5 @@
 const vehicleModel = require("../models/vehicleModel");
 
-// Get all vehicles
 const getAllVehicles = async (req, res) => {
   try {
     const vehicles = await vehicleModel.getAllVehicles();
@@ -19,7 +18,7 @@ const getAllVehicles = async (req, res) => {
   }
 };
 
-// Get vehicle by ID
+
 const getVehicleById = async (req, res) => {
   try {
     const vehicle = await vehicleModel.getVehicleById(req.params.id);
@@ -45,7 +44,7 @@ const getVehicleById = async (req, res) => {
   }
 };
 
-// Create vehicle
+
 const createVehicle = async (req, res) => {
   try {
     const {
@@ -63,6 +62,24 @@ const createVehicle = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Registration number, make and model are required.",
+      });
+    }
+
+    if (
+      manufacture_year &&
+      (manufacture_year < 1900 ||
+        manufacture_year > new Date().getFullYear() + 1)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid manufacture year.",
+      });
+    }
+
+    if (mileage !== undefined && mileage < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Mileage cannot be negative.",
       });
     }
 
@@ -102,7 +119,6 @@ const createVehicle = async (req, res) => {
   }
 };
 
-// Update vehicle
 const updateVehicle = async (req, res) => {
   try {
     const { id } = req.params;
@@ -137,7 +153,6 @@ const updateVehicle = async (req, res) => {
   }
 };
 
-// Deactivate vehicle
 const deactivateVehicle = async (req, res) => {
   try {
     const { id } = req.params;
