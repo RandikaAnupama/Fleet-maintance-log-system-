@@ -6,6 +6,7 @@ const driverRoutes = require("./routes/driverRoutes");
 const errorHandler = require("./middleware/errorHandler");
 const helmet = require("helmet");
 const cors = require("cors");
+const morgan = require("morgan");
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(
   })
 );
 
+app.use(morgan("dev"));
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
