@@ -3,6 +3,7 @@ const authRoutes = require("./routes/authRoutes");
 const testRoutes = require("./routes/testRoutes");
 const vehicleRoutes = require("./routes/vehicleRoutes");
 const driverRoutes = require("./routes/driverRoutes");
+const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
@@ -19,5 +20,6 @@ app.get("/", (req, res) => {
     message: "Fleet Maintenance Log System Backend API is running...",
   });
 });
+app.use(errorHandler);
 
 module.exports = app;
