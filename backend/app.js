@@ -7,6 +7,7 @@ const errorHandler = require("./middleware/errorHandler");
 const helmet = require("helmet");
 const cors = require("cors");
 const morgan = require("morgan");
+const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/drivers", driverRoutes);
+app.use("/api/users", userRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
