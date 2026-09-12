@@ -137,16 +137,79 @@ const updateVehicle = async (req, res) => {
       ...req.body,
     };
 
+    const { registration_number, make, model, manufacture_year, mileage } =
+      updatedVehicle;
+
+    if (
+      typeof registration_number !== "string" ||
+      !registration_number.trim() ||
+      typeof make !== "string" ||
+      !make.trim() ||
+      typeof model !== "string" ||
+      !model.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Registration number, make and model are required.",
+      });
+    }
+
+    if (manufacture_year !== null && manufacture_year !== undefined) {
+      const year = Number(manufacture_year);
+
+      if (
+        !["string", "number"].includes(typeof manufacture_year) ||
+        !Number.isInteger(year) ||
+        year < 1900 ||
+        year > new Date().getFullYear() + 1
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid manufacture year.",
+        });
+      }
+
+      updatedVehicle.manufacture_year = year;
+    }
+
+    if (
+      !["string", "number"].includes(typeof mileage) ||
+      (typeof mileage === "string" && !mileage.trim()) ||
+      !Number.isFinite(Number(mileage)) ||
+      Number(mileage) < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Mileage must be a valid non-negative number.",
+      });
+    }
+
+    updatedVehicle.registration_number = registration_number.trim();
+    updatedVehicle.make = make.trim();
+    updatedVehicle.model = model.trim();
+    updatedVehicle.mileage = Number(mileage);
+
+    const duplicateVehicle = await vehicleModel.findVehicleByRegistration(
+      updatedVehicle.registration_number
+    );
+
+    if (duplicateVehicle && String(duplicateVehicle.id) !== String(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Vehicle registration number already exists.",
+      });
+    }
+
     await vehicleModel.updateVehicle(id, updatedVehicle);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Vehicle updated successfully.",
     });
   } catch (error) {
     console.error("Update vehicle error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to update vehicle.",
     });

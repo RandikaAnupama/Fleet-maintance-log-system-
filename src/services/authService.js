@@ -104,8 +104,14 @@ const authService = {
     }
 
     const response = await api.post("/auth/login", credentials);
-    return response.data;
+
+    return {
+      ...response.data,
+      user: {
+        ...response.data.user,
+        name: response.data.user.full_name,
+      },
+    };
   },
 };
-
 export default authService;
