@@ -9,6 +9,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const userRoutes = require("./routes/userRoutes");
 const garageRoutes = require("./routes/garageRoutes");
+const repairRoutes = require("./routes/repairRoutes");
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/garages", garageRoutes);
+app.use("/api/repairs", repairRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
