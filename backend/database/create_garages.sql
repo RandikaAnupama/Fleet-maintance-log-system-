@@ -1,0 +1,13 @@
+SHOW TABLES FROM fleet_management LIKE 'garages';
+CREATE TABLE fleet_management.garages (
+    id INT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(150) NOT NULL,
+    status ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_garages_name (name)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;

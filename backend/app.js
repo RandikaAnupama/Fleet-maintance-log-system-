@@ -8,6 +8,7 @@ const helmet = require("helmet");
 const cors = require("cors");
 const morgan = require("morgan");
 const userRoutes = require("./routes/userRoutes");
+const garageRoutes = require("./routes/garageRoutes");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use("/api/test", testRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/garages", garageRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
