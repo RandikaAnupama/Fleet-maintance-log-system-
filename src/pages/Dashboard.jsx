@@ -13,10 +13,8 @@ export default function Dashboard() {
   const isAdmin = user?.role === "ADMIN";
   const assignedVehicle = "CAB-1234";
 
-  const userIssues = issues.filter(
-    (issue) => issue.vehicle === assignedVehicle
-  );
-
+  const userIssues = issues;
+  
   const userOpenIssues = userIssues.filter(
     (issue) => issue.status !== "RESOLVED"
   );
