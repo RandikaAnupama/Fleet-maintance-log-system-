@@ -11,6 +11,7 @@ const userRoutes = require("./routes/userRoutes");
 const garageRoutes = require("./routes/garageRoutes");
 const repairRoutes = require("./routes/repairRoutes");
 const maintenanceRoutes = require("./routes/maintenanceRoutes");
+const scheduleRoutes = require("./routes/scheduleRoutes");
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/garages", garageRoutes);
 app.use("/api/repairs", repairRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/schedules", scheduleRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
