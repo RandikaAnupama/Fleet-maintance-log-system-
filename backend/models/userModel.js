@@ -19,11 +19,25 @@ const findUserByEmail = async (email) => {
   return rows[0];
 };
 
+const userSelect = `
+  SELECT
+    u.id,
+    u.full_name,
+    u.email,
+    u.role,
+    u.status,
+    u.created_at,
+    u.assigned_vehicle_id,
+    v.registration_number AS assigned_vehicle_number,
+    v.status AS assigned_vehicle_status
+  FROM users u
+  LEFT JOIN vehicles v ON v.id = u.assigned_vehicle_id
+`;
+
 const getAllUsers = async () => {
   const [rows] = await pool.execute(
-    `SELECT id, full_name, email, role, status, created_at
-     FROM users
-     ORDER BY id DESC`
+    `${userSelect}
+     ORDER BY u.id DESC`
   );
 
   return rows;
@@ -31,9 +45,8 @@ const getAllUsers = async () => {
 
 const getUserById = async (id) => {
   const [rows] = await pool.execute(
-    `SELECT id, full_name, email, role, status, created_at
-     FROM users
-     WHERE id = ?`,
+    `${userSelect}
+     WHERE u.id = ?`,
     [id]
   );
 
@@ -62,6 +75,16 @@ const updateUserStatus = async (id, status) => {
   return result;
 };
 
+const updateAssignedVehicle = async (id, vehicleId) => {
+  const [result] = await pool.execute(
+    `UPDATE users
+     SET assigned_vehicle_id = ?
+     WHERE id = ?`,
+    [vehicleId, id]
+  );
+
+  return result;
+};
 
 module.exports = {
   createUser,
@@ -70,4 +93,5 @@ module.exports = {
   getUserById,
   updateUserRole,
   updateUserStatus,
+  updateAssignedVehicle,
 };

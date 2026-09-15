@@ -33,4 +33,11 @@ router.put(
   userController.updateUserStatus
 );
 
+router.put(
+  "/:id/vehicle",
+  verifyToken,
+  authorizeRoles("ADMIN"),
+  userController.updateAssignedVehicle
+);
+
 module.exports = router;
