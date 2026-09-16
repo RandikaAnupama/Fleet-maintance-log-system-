@@ -5,21 +5,18 @@ const driverController = require("../controllers/driverController");
 const verifyToken = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
-// View all drivers
 router.get(
   "/",
   verifyToken,
   driverController.getAllDrivers
 );
 
-// View one driver
 router.get(
   "/:id",
   verifyToken,
   driverController.getDriverById
 );
 
-// Add driver - ADMIN only
 router.post(
   "/",
   verifyToken,
@@ -27,7 +24,6 @@ router.post(
   driverController.createDriver
 );
 
-// Update driver - ADMIN only
 router.put(
   "/:id",
   verifyToken,
@@ -35,7 +31,6 @@ router.put(
   driverController.updateDriver
 );
 
-// Deactivate driver - ADMIN only
 router.delete(
   "/:id",
   verifyToken,

@@ -1,179 +1,220 @@
 const driverModel = require("../models/driverModel");
 
+const fail = (res, status, message) =>
+  res.status(status).json({ success: false, message });
+
+const validId = (value) =>
+  /^[1-9]\d*$/.test(String(value)) &&
+  Number.isSafeInteger(Number(value));
+
+const fields = [
+  "full_name",
+  "license_number",
+  "phone",
+  "email",
+  "address",
+  "status",
+];
+
+const prepareDriver = (body, existing = null) => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("A JSON object is required.");
+  }
+
+  if (Object.keys(body).some((key) => !fields.includes(key))) {
+    throw new Error("Unknown driver field.");
+  }
+
+  const data = {};
+
+  for (const field of fields) {
+    data[field] = Object.prototype.hasOwnProperty.call(body, field)
+      ? body[field]
+      : existing?.[field];
+  }
+
+  for (const [field, label, limit] of [
+    ["full_name", "Full name", 100],
+    ["license_number", "License number", 50],
+  ]) {
+    if (
+      typeof data[field] !== "string" ||
+      !data[field].trim() ||
+      data[field].trim().length > limit
+    ) {
+      throw new Error(`${label} must contain 1 to ${limit} characters.`);
+    }
+
+    data[field] = data[field].trim();
+  }
+
+  for (const field of ["phone", "email", "address"]) {
+    if (data[field] == null) {
+      data[field] = "";
+    }
+
+    if (typeof data[field] !== "string") {
+      throw new Error(`${field} must be text.`);
+    }
+
+    data[field] = data[field].trim();
+  }
+
+  if (data.phone && !/^[0-9]{10}$/.test(data.phone)) {
+    throw new Error("Phone number must contain 10 digits.");
+  }
+
+  if (
+    data.email &&
+    (data.email.length > 100 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))
+  ) {
+    throw new Error("Enter a valid email address, up to 100 characters.");
+  }
+
+  if (Buffer.byteLength(data.address, "utf8") > 65535) {
+    throw new Error("Address is too long.");
+  }
+
+  if (data.status === undefined) {
+    data.status = "ACTIVE";
+  }
+
+  if (!["ACTIVE", "INACTIVE"].includes(data.status)) {
+    throw new Error("Invalid driver status.");
+  }
+
+  return data;
+};
+
+const handleError = (res, error, message) => {
+  console.error(message, error);
+
+  if (error.code === "ER_DUP_ENTRY") {
+    return fail(res, 409, "Driver license number already exists.");
+  }
+
+  return fail(res, 500, message);
+};
+
 const getAllDrivers = async (req, res) => {
   try {
     const drivers = await driverModel.getAllDrivers();
-
-    res.status(200).json({
-      success: true,
-      drivers,
-    });
+    return res.status(200).json({ success: true, drivers });
   } catch (error) {
-    console.error("Get drivers error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to get drivers.",
-    });
+    return handleError(res, error, "Failed to get drivers.");
   }
 };
 
 const getDriverById = async (req, res) => {
   try {
-    const driver = await driverModel.getDriverById(req.params.id);
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found.",
-      });
+    if (!validId(req.params.id)) {
+      return fail(res, 400, "Invalid driver ID.");
     }
 
-    res.status(200).json({
-      success: true,
-      driver,
-    });
-  } catch (error) {
-    console.error("Get driver error:", error);
+    const driver = await driverModel.getDriverById(Number(req.params.id));
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to get driver.",
-    });
+    if (!driver) {
+      return fail(res, 404, "Driver not found.");
+    }
+
+    return res.status(200).json({ success: true, driver });
+  } catch (error) {
+    return handleError(res, error, "Failed to get driver.");
   }
 };
 
 const createDriver = async (req, res) => {
   try {
-    const {
-      full_name,
-      license_number,
-      phone,
-      email,
-      address,
-      status,
-    } = req.body;
+    let data;
 
-    if (!full_name || !license_number) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name and license number are required.",
-      });
+    try {
+      data = prepareDriver(req.body);
+    } catch (error) {
+      return fail(res, 400, error.message);
     }
 
-    if (email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const duplicate = await driverModel.findDriverByLicense(
+      data.license_number
+    );
 
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({
-            success: false,
-            message: "Invalid email address.",
-            });
-        }
-        }
-    
-    if (phone && !/^[0-9]{10}$/.test(phone)) {
-        return res.status(400).json({
-            success: false,
-            message: "Phone number must contain 10 digits.",
-        });
-        }
-
-
-    const existingDriver =
-      await driverModel.findDriverByLicense(license_number);
-
-    if (existingDriver) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver license number already exists.",
-      });
+    if (duplicate) {
+      return fail(res, 409, "Driver license number already exists.");
     }
 
-    const driverId = await driverModel.createDriver({
-      full_name,
-      license_number,
-      phone,
-      email,
-      address,
-      status,
-    });
+    const driverId = await driverModel.createDriver(data);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Driver created successfully.",
       driverId,
     });
   } catch (error) {
-    console.error("Create driver error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to create driver.",
-    });
+    return handleError(res, error, "Failed to create driver.");
   }
 };
 
 const updateDriver = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const existingDriver = await driverModel.getDriverById(id);
-
-    if (!existingDriver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found.",
-      });
+    if (!validId(req.params.id)) {
+      return fail(res, 400, "Invalid driver ID.");
     }
 
-    const updatedDriver = {
-      ...existingDriver,
-      ...req.body,
-    };
+    const id = Number(req.params.id);
+    const existing = await driverModel.getDriverById(id);
 
-    await driverModel.updateDriver(id, updatedDriver);
+    if (!existing) {
+      return fail(res, 404, "Driver not found.");
+    }
 
-    res.status(200).json({
+    let data;
+
+    try {
+      data = prepareDriver(req.body, existing);
+    } catch (error) {
+      return fail(res, 400, error.message);
+    }
+
+    const duplicate = await driverModel.findDriverByLicense(
+      data.license_number
+    );
+
+    if (duplicate && Number(duplicate.id) !== id) {
+      return fail(res, 409, "Driver license number already exists.");
+    }
+
+    await driverModel.updateDriver(id, data);
+
+    return res.status(200).json({
       success: true,
       message: "Driver updated successfully.",
     });
   } catch (error) {
-    console.error("Update driver error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update driver.",
-    });
+    return handleError(res, error, "Failed to update driver.");
   }
 };
 
 const deactivateDriver = async (req, res) => {
   try {
-    const { id } = req.params;
+    if (!validId(req.params.id)) {
+      return fail(res, 400, "Invalid driver ID.");
+    }
 
+    const id = Number(req.params.id);
     const driver = await driverModel.getDriverById(id);
 
     if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found.",
-      });
+      return fail(res, 404, "Driver not found.");
     }
 
     await driverModel.deactivateDriver(id);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Driver deactivated successfully.",
     });
   } catch (error) {
-    console.error("Deactivate driver error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to deactivate driver.",
-    });
+    return handleError(res, error, "Failed to deactivate driver.");
   }
 };
 
