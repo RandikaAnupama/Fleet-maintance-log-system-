@@ -1,171 +1,289 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useIssues } from "../context/IssueContext";
-import { maintenanceSeed } from "../data/mockData";
 import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 import StatusBadge from "../components/StatusBadge";
 import DataTable from "../components/DataTable";
+import api from "../services/api";
+
+const money = (value) =>
+  `Rs. ${Number(value ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const { issues, openIssues } = useIssues();
+  const { user, token } = useAuth();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const requestId = useRef(0);
 
-  const isAdmin = user?.role === "ADMIN";
-  const assignedVehicle = "CAB-1234";
+  const loadDashboard = useCallback(async () => {
+    const currentRequest = ++requestId.current;
 
-  const userIssues = issues;
-  
-  const userOpenIssues = userIssues.filter(
-    (issue) => issue.status !== "RESOLVED"
-  );
+    setLoading(true);
+    setError("");
 
-  const highPriorityIssues = openIssues.filter(
-    (issue) => issue.priority === "HIGH"
-  );
+    try {
+      const response = await api.get("/dashboard");
 
-  const dashboardIssues = isAdmin ? issues : userIssues;
+      if (currentRequest === requestId.current) {
+        setData(response.data.dashboard);
+      }
+    } catch (err) {
+      if (currentRequest === requestId.current) {
+        setData(null);
+        setError(
+          err.response?.data?.message ||
+            err.message ||
+            "Failed to load dashboard."
+        );
+      }
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+      }
+    }
+  }, [token]);
 
-  const dashboardMaintenance = isAdmin
-    ? maintenanceSeed
-    : maintenanceSeed.filter(
-        (record) => record.vehicle === assignedVehicle
-      );
+  useEffect(() => {
+    setData(null);
+    loadDashboard();
 
-  const adminCards = [
-    ["Total Vehicles", "24", "bi-truck", "20 active"],
-    ["Services Due", "5", "bi-calendar2-event", "Next 7 days"],
-    [
-      "Open Issues",
-      openIssues.length.toString(),
-      "bi-exclamation-circle",
-      `${highPriorityIssues.length} high priority`
-    ],
-    ["Monthly Cost", "Rs. 125,000", "bi-cash-stack", "July 2026"]
-  ];
+    return () => {
+      requestId.current += 1;
+    };
+  }, [loadDashboard]);
 
-  const userCards = [
-    ["My Vehicle", assignedVehicle, "bi-truck", "Toyota Hilux"],
-    ["Next Service", "15 Aug 2026", "bi-calendar-check", "Oil and filter"],
-    ["Last Service", "18 Jul 2026", "bi-tools", "Completed"],
-    [
-      "Open Issues",
-      userOpenIssues.length.toString(),
-      "bi-exclamation-circle",
-      userOpenIssues.length > 0
-        ? userOpenIssues[0].title
-        : "No open issues"
-    ]
-  ];
+  const isAdmin = (data?.role || user?.role) === "ADMIN";
+  const nextService = data?.next_service;
+  const lastService = data?.last_service;
+  const vehicle = data?.vehicle;
+
+  const cards = !data
+    ? []
+    : isAdmin
+      ? [
+          [
+            "Total Vehicles",
+            String(data.total_vehicles),
+            "bi-truck",
+            `${data.active_vehicles} active`,
+          ],
+          [
+            "Services Due",
+            String(data.services_due),
+            "bi-calendar2-event",
+            `Today + next 6 days · ${data.overdue_services} overdue`,
+          ],
+          [
+            "Open Issues",
+            String(data.open_issues),
+            "bi-exclamation-circle",
+            `${data.high_priority} high priority`,
+          ],
+          [
+            "Monthly Cost",
+            money(data.monthly_cost),
+            "bi-cash-stack",
+            `${data.month_label} · through ${data.today}`,
+          ],
+        ]
+      : [
+          [
+            "My Vehicle",
+            vehicle?.registration_number || "Not assigned",
+            "bi-truck",
+            vehicle
+              ? `${vehicle.make} ${vehicle.model}`
+              : "Contact the administrator",
+          ],
+          [
+            "Next Pending Service",
+            nextService?.due_date || "Not scheduled",
+            "bi-calendar-check",
+            nextService
+              ? `${nextService.service_type} · ${nextService.status}`
+              : "No pending schedule",
+          ],
+          [
+            "Last Service",
+            lastService?.service_date || "No record",
+            "bi-tools",
+            lastService?.service_type || "No completed service to date",
+          ],
+          [
+            "Open Issues",
+            String(data.open_issues),
+            "bi-exclamation-circle",
+            `${data.high_priority} high priority`,
+          ],
+        ];
 
   const columns = [
-    { key: "vehicle", label: "Vehicle" },
-    { key: "type", label: "Service" },
-    { key: "date", label: "Date" },
+    { key: "vehicle_number", label: "Vehicle" },
+    { key: "service_type", label: "Service" },
+    { key: "service_date", label: "Date" },
     {
       key: "cost",
       label: "Cost",
-      render: (row) => `Rs. ${row.cost.toLocaleString()}`
+      render: (row) => money(row.cost),
     },
     {
       key: "status",
       label: "Status",
-      render: (row) => <StatusBadge value={row.status} />
-    }
+      render: (row) => <StatusBadge value={row.status} />,
+    },
   ];
 
   return (
     <>
       <PageHeader
-        title={`Welcome, ${user?.name}`}
+        title={`Welcome, ${user?.name || user?.full_name || "User"}`}
         subtitle={
           isAdmin
             ? "Administrator overview of the complete fleet."
             : "Your assigned vehicle and maintenance overview."
         }
+        action={
+          <button
+            className="btn btn-outline-secondary"
+            disabled={loading}
+            onClick={loadDashboard}
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        }
       />
 
-      <div className="row g-3 mb-4">
-        {(isAdmin ? adminCards : userCards).map(
-          ([title, value, icon, note]) => (
-            <div className="col-sm-6 col-xl-3" key={title}>
-              <StatCard
-                title={title}
-                value={value}
-                icon={icon}
-                note={note}
-              />
-            </div>
-          )
-        )}
-      </div>
-
-      <div className="row g-4">
-        <div className="col-xl-8">
-          <div className="card h-100">
-            <div className="card-header bg-white">
-              <h5 className="mb-0">
-                {isAdmin
-                  ? "Recent Maintenance"
-                  : "My Maintenance History"}
-              </h5>
-            </div>
-
-            <DataTable
-              columns={columns}
-              rows={dashboardMaintenance}
-            />
-          </div>
+      {error && (
+        <div className="alert alert-danger">
+          {error} Click Refresh to try again.
         </div>
+      )}
 
-        <div className="col-xl-4">
-          <div className="card h-100">
-            <div className="card-header bg-white">
-              <h5 className="mb-0">Notifications</h5>
+      {loading ? (
+        <div className="card">
+          <div className="card-body">Loading dashboard...</div>
+        </div>
+      ) : data ? (
+        <>
+          <div className="row g-3 mb-4">
+            {cards.map(([title, value, icon, note]) => (
+              <div className="col-sm-6 col-xl-3" key={title}>
+                <StatCard
+                  title={title}
+                  value={value}
+                  icon={icon}
+                  note={note}
+                />
+              </div>
+            ))}
+          </div>
+
+          {!isAdmin && !vehicle && (
+            <div className="alert alert-info">
+              No vehicle assigned. Please contact the administrator.
             </div>
+          )}
 
-            <div className="card-body">
-              {dashboardIssues.length === 0 ? (
-                <p className="text-muted mb-0">
-                  No issue notifications available.
-                </p>
-              ) : (
-                dashboardIssues.map((issue) => (
-                  <div
-                    className="notification-item"
-                    key={issue.id}
-                  >
-                    <i className="bi bi-exclamation-triangle"></i>
-
-                    <div>
-                      <strong>{issue.title}</strong>
-
-                      <div className="text-muted small">
-                        {issue.vehicle} · {issue.date}
-                      </div>
-                    </div>
-
-                    <StatusBadge value={issue.status} />
-                  </div>
-                ))
-              )}
-
-              {isAdmin && (
-                <div className="notification-item">
-                  <i className="bi bi-calendar-event"></i>
-
-                  <div>
-                    <strong>Service due soon</strong>
-
-                    <div className="text-muted small">
-                      CAD-5678 · 25 Jul 2026
-                    </div>
-                  </div>
+          <div className="row g-4">
+            <div className="col-xl-8">
+              <div className="card h-100">
+                <div className="card-header bg-white">
+                  <h5 className="mb-0">
+                    {isAdmin
+                      ? "Recent Maintenance"
+                      : "My Maintenance History"}
+                  </h5>
                 </div>
-              )}
+
+                {data.maintenance.length === 0 ? (
+                  <div className="card-body">
+                    No maintenance records available.
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <DataTable
+                      columns={columns}
+                      rows={data.maintenance}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="col-xl-4">
+              <div className="card h-100">
+                <div className="card-header bg-white">
+                  <h5 className="mb-0">Notifications</h5>
+                </div>
+
+                <div className="card-body">
+                  <p className="text-muted small">
+                    Recent issues and pending service reminders.
+                    Use Refresh to check for updates.
+                  </p>
+
+                  {data.issues.length === 0 &&
+                    data.schedules.length === 0 && (
+                      <p className="text-muted mb-0">
+                        No notifications available.
+                      </p>
+                    )}
+
+                  {data.issues.map((issue) => (
+                    <div
+                      className="notification-item"
+                      key={`issue-${issue.id}`}
+                    >
+                      <i className="bi bi-exclamation-triangle"></i>
+
+                      <div>
+                        <strong>{issue.title}</strong>
+                        <div className="text-muted small">
+                          {issue.vehicle_number || "Vehicle unavailable"}
+                          {" · "}
+                          {issue.reported_date}
+                        </div>
+                      </div>
+
+                      <StatusBadge value={issue.status} />
+                    </div>
+                  ))}
+
+                  {data.schedules.map((schedule) => (
+                    <div
+                      className="notification-item"
+                      key={`schedule-${schedule.id}`}
+                    >
+                      <i className="bi bi-calendar-event"></i>
+
+                      <div>
+                        <strong>
+                          {schedule.status === "OVERDUE"
+                            ? "Service overdue"
+                            : "Service due soon"}
+                          {": "}
+                          {schedule.service_type}
+                        </strong>
+                        <div className="text-muted small">
+                          {schedule.vehicle_number}
+                          {" · "}
+                          {schedule.due_date}
+                        </div>
+                      </div>
+
+                      <StatusBadge value={schedule.status} />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </>
+      ) : null}
     </>
   );
 }
