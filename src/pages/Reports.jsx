@@ -1,190 +1,230 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
 import StatusBadge from "../components/StatusBadge";
-import { maintenanceSeed, repairsSeed } from "../data/mockData";
+import api from "../services/api";
 
-function escapeCsvValue(value) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+const money = (value) =>
+  `Rs. ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+function localDate() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function downloadCsv(filename, rows, category) {
-  if (rows.length === 0) {
-    alert("No records available to export.");
-    return;
+function csvCell(value) {
+  let text = String(value ?? "");
+
+  if (/^[\s]*[=+\-@]/.test(text) || /^[\t\r\n]/.test(text)) {
+    text = `'${text}`;
   }
 
-  const isMaintenance = category === "maintenance";
+  return `"${text.replaceAll('"', '""')}"`;
+}
 
-  const headers = [
-    "Vehicle",
-    isMaintenance ? "Service Type" : "Repair Description",
-    "Date",
-    "Garage",
-    "Cost",
-    "Status",
-  ];
-
-  const csvRows = rows.map((row) => [
-    row.vehicle,
-    isMaintenance ? row.type : row.description,
-    row.date,
-    row.garage || "Not Assigned",
-    row.cost,
-    row.status,
-  ]);
-
-  const csvContent = [
-    headers.map(escapeCsvValue).join(","),
-    ...csvRows.map((row) => row.map(escapeCsvValue).join(",")),
-  ].join("\n");
-
-  const blob = new Blob([csvContent], {
-    type: "text/csv;charset=utf-8;",
-  });
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = filename;
-
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-
-  URL.revokeObjectURL(url);
+function Filter({ label, value, onChange, options }) {
+  return (
+    <div className="col-md-4 col-lg-3">
+      <label className="form-label">{label}</label>
+      <select
+        className="form-select"
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">All</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 export default function Reports() {
   const [category, setCategory] = useState("maintenance");
-  const [reportType, setReportType] = useState("daily");
-
-  const [selectedDate, setSelectedDate] = useState("2026-07-20");
-  const [selectedMonth, setSelectedMonth] = useState("2026-07");
-
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [vehicleFilter, setVehicleFilter] = useState("ALL");
-  const [workTypeFilter, setWorkTypeFilter] = useState("ALL");
-  const [garageFilter, setGarageFilter] = useState("ALL");
-
-  const rows =
-    category === "maintenance" ? maintenanceSeed : repairsSeed;
+  const [reportType, setReportType] = useState("monthly");
+  const [selectedDate, setSelectedDate] = useState(localDate);
+  const [selectedMonth, setSelectedMonth] = useState(
+    () => localDate().slice(0, 7)
+  );
+  const [statusFilter, setStatusFilter] = useState("");
+  const [vehicleFilter, setVehicleFilter] = useState("");
+  const [workFilter, setWorkFilter] = useState("");
+  const [garageFilter, setGarageFilter] = useState("");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
+  const requestId = useRef(0);
 
   const isMaintenance = category === "maintenance";
+  const period =
+    reportType === "daily" ? selectedDate : selectedMonth;
 
-  const getUniqueValues = (key) => {
-    return [
-      ...new Set(
-        rows
-          .map((row) => row[key])
-          .filter(
-            (value) =>
-              value !== undefined &&
-              value !== null &&
-              value !== ""
-          )
-      ),
-    ];
-  };
+  useEffect(() => {
+    const currentRequest = ++requestId.current;
+    let active = true;
 
-  const vehicleOptions = getUniqueValues("vehicle");
-  const garageOptions = getUniqueValues("garage");
-  const statusOptions = getUniqueValues("status");
+    setLoading(true);
+    setError("");
+    setRows([]);
 
-  const workTypeOptions = isMaintenance
-    ? getUniqueValues("type")
-    : getUniqueValues("description");
+    const load = async () => {
+      try {
+        const response = await api.get(
+          category === "maintenance" ? "/maintenance" : "/repairs"
+        );
+
+        if (!active || currentRequest !== requestId.current) return;
+
+        const records =
+          category === "maintenance"
+            ? response.data.maintenance
+            : response.data.repairs;
+
+        if (!Array.isArray(records)) {
+          throw new Error("Unexpected report response.");
+        }
+
+        const mapped = records.map((row) => ({
+          id: row.id,
+          vehicle: row.vehicle_number || "Unavailable",
+          type:
+            category === "maintenance"
+              ? row.service_type
+              : row.repair_type,
+          description: row.description || "",
+          date: String(
+            category === "maintenance"
+              ? row.service_date || ""
+              : row.repair_date || ""
+          ).slice(0, 10),
+          garage: category === "repair" ? row.garage_name || "" : "",
+          cost: Number(row.cost || 0),
+          status: row.status,
+        }));
+
+        mapped.sort(
+          (a, b) => b.date.localeCompare(a.date) || b.id - a.id
+        );
+
+        setRows(mapped);
+      } catch (err) {
+        if (active && currentRequest === requestId.current) {
+          setError(
+            err.response?.data?.message ||
+              err.message ||
+              "Failed to load report data."
+          );
+        }
+      } finally {
+        if (active && currentRequest === requestId.current) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [category, reload]);
+
+  const options = useMemo(() => {
+    const unique = (key) =>
+      [...new Set(rows.map((row) => row[key]).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b));
+
+    return {
+      vehicles: unique("vehicle"),
+      types: unique("type"),
+      garages: unique("garage"),
+      statuses: unique("status"),
+    };
+  }, [rows]);
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const rowDate = String(row.date || "");
+    if (!period) return [];
 
+    return rows.filter((row) => {
       const matchesPeriod =
         reportType === "daily"
-          ? rowDate === selectedDate
-          : rowDate.startsWith(selectedMonth);
-
-      const matchesStatus =
-        statusFilter === "ALL" ||
-        String(row.status || "").toUpperCase() === statusFilter;
-
-      const matchesVehicle =
-        vehicleFilter === "ALL" ||
-        row.vehicle === vehicleFilter;
-
-      const rowWorkType = isMaintenance
-        ? row.type
-        : row.description;
-
-      const matchesWorkType =
-        workTypeFilter === "ALL" ||
-        rowWorkType === workTypeFilter;
-
-      const matchesGarage =
-        garageFilter === "ALL" ||
-        String(row.garage || "") === garageFilter;
+          ? row.date === selectedDate
+          : row.date.slice(0, 7) === selectedMonth;
 
       return (
         matchesPeriod &&
-        matchesStatus &&
-        matchesVehicle &&
-        matchesWorkType &&
-        matchesGarage
+        (!statusFilter || row.status === statusFilter) &&
+        (!vehicleFilter || row.vehicle === vehicleFilter) &&
+        (!workFilter || row.type === workFilter) &&
+        (isMaintenance || !garageFilter || row.garage === garageFilter)
       );
     });
   }, [
     rows,
+    period,
     reportType,
     selectedDate,
     selectedMonth,
     statusFilter,
     vehicleFilter,
-    workTypeFilter,
+    workFilter,
     garageFilter,
     isMaintenance,
   ]);
 
-  const totalCost = filteredRows.reduce(
-    (total, row) => total + Number(row.cost || 0),
+  const totalCents = filteredRows.reduce(
+    (sum, row) => sum + Math.round(row.cost * 100),
     0
   );
 
   const completedCount = filteredRows.filter(
-    (row) =>
-      String(row.status || "").toUpperCase() === "COMPLETED"
+    (row) => row.status === "COMPLETED"
   ).length;
 
   const pendingCount = filteredRows.filter(
-    (row) =>
-      String(row.status || "").toUpperCase() === "PENDING"
+    (row) => row.status === "PENDING"
+  ).length;
+
+  const inProgressCount = filteredRows.filter(
+    (row) => row.status === "IN_PROGRESS"
   ).length;
 
   const columns = [
+    { key: "vehicle", label: "Vehicle" },
     {
-      key: "vehicle",
-      label: "Vehicle",
+      key: "type",
+      label: isMaintenance ? "Service Type" : "Repair Type",
     },
     {
-      key: isMaintenance ? "type" : "description",
-      label: isMaintenance
-        ? "Service Type"
-        : "Repair Description",
+      key: "description",
+      label: "Description",
+      render: (row) => row.description || "—",
     },
-    {
-      key: "date",
-      label: "Date",
-    },
-    {
-      key: "garage",
-      label: "Garage",
-      render: (row) => row.garage || "—",
-    },
+    { key: "date", label: "Date" },
+    ...(!isMaintenance
+      ? [{
+          key: "garage",
+          label: "Garage",
+          render: (row) => row.garage || "Not recorded",
+        }]
+      : []),
     {
       key: "cost",
-      label: "Cost",
-      render: (row) =>
-        `Rs. ${Number(row.cost || 0).toLocaleString()}`,
+      label: "Recorded Cost",
+      render: (row) => money(row.cost),
     },
     {
       key: "status",
@@ -193,194 +233,214 @@ export default function Reports() {
     },
   ];
 
-  const handleCategoryChange = (event) => {
-    setCategory(event.target.value);
-    setStatusFilter("ALL");
-    setVehicleFilter("ALL");
-    setWorkTypeFilter("ALL");
-    setGarageFilter("ALL");
+  const exportFields = [
+    ["vehicle", "Vehicle"],
+    ["type", isMaintenance ? "Service Type" : "Repair Type"],
+    ["description", "Description"],
+    ["date", "Date"],
+    ...(!isMaintenance ? [["garage", "Garage"]] : []),
+    ["cost", "Recorded Cost (LKR)"],
+    ["status", "Status"],
+  ];
+
+  const resetFilters = () => {
+    setStatusFilter("");
+    setVehicleFilter("");
+    setWorkFilter("");
+    setGarageFilter("");
   };
 
-  const handleResetFilters = () => {
-    setStatusFilter("ALL");
-    setVehicleFilter("ALL");
-    setWorkTypeFilter("ALL");
-    setGarageFilter("ALL");
+  const canExport =
+    !loading && !error && Boolean(period) && filteredRows.length > 0;
+
+  const exportCsv = () => {
+    if (!canExport) return;
+
+    const lines = [
+      exportFields.map(([, label]) => csvCell(label)).join(","),
+      ...filteredRows.map((row) =>
+        exportFields
+          .map(([key]) =>
+            csvCell(key === "cost" ? row.cost.toFixed(2) : row[key])
+          )
+          .join(",")
+      ),
+    ];
+
+    const blob = new Blob(["\uFEFF", lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${category}-${reportType}-${period}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleCsvExport = () => {
-    const period =
-      reportType === "daily" ? selectedDate : selectedMonth;
+  const reportTitle =
+    `${reportType === "daily" ? "Daily" : "Monthly"} ` +
+    `${isMaintenance ? "Maintenance" : "Repair"} Report`;
 
-    downloadCsv(
-      `${category}-${reportType}-report-${period}.csv`,
-      filteredRows,
-      category
-    );
-  };
-
-  const handlePrint = () => {
-    if (filteredRows.length === 0) {
-      alert("No records available to print.");
-      return;
-    }
-
-    window.print();
-  };
+  const filterSummary = [
+    `Status: ${statusFilter || "All"}`,
+    `Vehicle: ${vehicleFilter || "All"}`,
+    `Type: ${workFilter || "All"}`,
+    ...(!isMaintenance ? [`Garage: ${garageFilter || "All"}`] : []),
+  ].join(" | ");
 
   return (
     <>
+      <style>{`
+        .fleet-report-print { display: none; }
+        @media print {
+          @page { size: A4 landscape; margin: 12mm; }
+          body > :not(.fleet-report-print) { display: none !important; }
+          body > .fleet-report-print {
+            display: block !important;
+            color: #000;
+            background: #fff;
+            font-size: 10pt;
+          }
+          .fleet-report-print table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+          }
+          .fleet-report-print th,
+          .fleet-report-print td {
+            border: 1px solid #777;
+            padding: 6px;
+            overflow-wrap: anywhere;
+          }
+          .fleet-report-print thead { display: table-header-group; }
+          .fleet-report-print tr { break-inside: avoid; }
+        }
+      `}</style>
+
       <PageHeader
         title="Reports"
-        subtitle="Generate daily and monthly maintenance or repair reports."
+        subtitle="Daily and monthly maintenance or repair records."
+        action={
+          <button
+            className="btn btn-outline-secondary"
+            disabled={loading}
+            onClick={() => setReload((value) => value + 1)}
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        }
       />
+
+      {error && (
+        <div className="alert alert-danger">
+          {error} Click Refresh to try again.
+        </div>
+      )}
 
       <div className="card mb-4">
         <div className="card-body">
           <div className="row g-3">
             <div className="col-md-4 col-lg-3">
-              <label className="form-label">
-                Report Category
-              </label>
+              <label className="form-label">Report Category</label>
+              <select
+                className="form-select"
+                aria-label="Report category"
+                value={category}
+                onChange={(event) => {
+                  setCategory(event.target.value);
+                  resetFilters();
+                  setRows([]);
+                  setLoading(true);
+                }}
+              >
+                <option value="maintenance">Maintenance</option>
+                <option value="repair">Repair</option>
+              </select>
+            </div>
 
-              <select className="form-select" value={category} onChange={handleCategoryChange}>
-                <option value="maintenance">
-                  Maintenance Report
-                </option>
-                <option value="repair">
-                  Repair Report
-                </option>
+            <div className="col-md-4 col-lg-3">
+              <label className="form-label">Report Type</label>
+              <select
+                className="form-select"
+                aria-label="Report type"
+                value={reportType}
+                onChange={(event) => setReportType(event.target.value)}
+              >
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
               </select>
             </div>
 
             <div className="col-md-4 col-lg-3">
               <label className="form-label">
-                Report Type
+                {reportType === "daily" ? "Date" : "Month"}
               </label>
-
-              <select className="form-select" value={reportType} onChange={(event) =>setReportType(event.target.value)}>
-                <option value="daily">Daily Report</option>
-                <option value="monthly">Monthly Report</option>
-              </select>
+              <input
+                className="form-control"
+                aria-label="Report period"
+                type={reportType === "daily" ? "date" : "month"}
+                value={period}
+                onChange={(event) =>
+                  reportType === "daily"
+                    ? setSelectedDate(event.target.value)
+                    : setSelectedMonth(event.target.value)
+                }
+              />
             </div>
 
-            <div className="col-md-4 col-lg-3">
-              <label className="form-label">
-                {reportType === "daily"
-                  ? "Select Date"
-                  : "Select Month"}
-              </label>
+            <Filter
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={options.statuses}
+            />
 
-              {reportType === "daily" ? (
-                <input
-                  type="date"
-                  className="form-control"
-                  value={selectedDate}
-                  onChange={(event) =>
-                    setSelectedDate(event.target.value)
-                  }
-                />
-              ) : (
-                <input
-                  type="month"
-                  className="form-control"
-                  value={selectedMonth}
-                  onChange={(event) =>
-                    setSelectedMonth(event.target.value)
-                  }
-                />
-              )}
-            </div>
+            <Filter
+              label="Vehicle"
+              value={vehicleFilter}
+              onChange={setVehicleFilter}
+              options={options.vehicles}
+            />
 
-            <div className="col-md-4 col-lg-3">
-              <label className="form-label">Status</label>
+            <Filter
+              label={isMaintenance ? "Service Type" : "Repair Type"}
+              value={workFilter}
+              onChange={setWorkFilter}
+              options={options.types}
+            />
 
-              <select className="form-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="ALL">All Statuses</option>
+            {!isMaintenance && (
+              <Filter
+                label="Garage"
+                value={garageFilter}
+                onChange={setGarageFilter}
+                options={options.garages}
+              />
+            )}
 
-                {statusOptions.map((status) => (
-                  <option key={status} value={String(status).toUpperCase()}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4 col-lg-3">
-              <label className="form-label">Vehicle</label>
-
-              <select className="form-select" value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)}>
-                <option value="ALL">All Vehicles</option>
-
-                {vehicleOptions.map((vehicle) => (
-                  <option key={vehicle} value={vehicle}>
-                    {vehicle}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4 col-lg-3">
-              <label className="form-label">
-                {isMaintenance
-                  ? "Service Type"
-                  : "Repair Description"}
-              </label>
-
-              <select className="form-select" value={workTypeFilter} onChange={(event) =>  setWorkTypeFilter(event.target.value)}>
-                <option value="ALL">
-                  {isMaintenance
-                    ? "All Service Types"
-                    : "All Repair Types"}
-                </option>
-
-                {workTypeOptions.map((workType) => (
-                  <option key={workType} value={workType}>
-                    {workType}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4 col-lg-3">
-              <label className="form-label">Garage</label>
- 
-              <select className="form-select" value={garageFilter} onChange={(event) => setGarageFilter(event.target.value)}>
-                <option value="ALL">All Garages</option>
-
-                {garageOptions.map((garage) => (
-                  <option key={garage} value={garage}>
-                    {garage}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-8 col-lg-3 d-flex align-items-end gap-2 flex-wrap">
+            <div className="col-12 d-flex flex-wrap gap-2">
               <button
-                type="button"
                 className="btn btn-outline-secondary"
-                onClick={handleResetFilters}
+                onClick={resetFilters}
               >
-                <i className="bi bi-arrow-counterclockwise me-1"></i>
-                Reset
+                Reset Filters
               </button>
-
               <button
-                type="button"
                 className="btn btn-outline-success"
-                onClick={handleCsvExport}
+                disabled={!canExport}
+                onClick={exportCsv}
               >
-                <i className="bi bi-filetype-csv me-1"></i>
                 CSV
               </button>
-
               <button
-                type="button"
                 className="btn btn-outline-danger"
-                onClick={handlePrint}
+                disabled={!canExport}
+                onClick={() => window.print()}
               >
-                <i className="bi bi-filetype-pdf me-1"></i>
                 Print / PDF
               </button>
             </div>
@@ -388,63 +448,105 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="row g-3 mb-4">
-        <div className="col-md-6 col-xl-3">
-          <div className="card h-100">
-            <div className="card-body">
-              <p className="text-muted mb-1">Total Records</p>
-              <h3 className="mb-0">{filteredRows.length}</h3>
+      {loading ? (
+        <div className="card card-body">Loading report data...</div>
+      ) : error ? null : !period ? (
+        <div className="alert alert-info">
+          Select a date or month to view the report.
+        </div>
+      ) : (
+        <>
+          <div className="row g-3 mb-3">
+            {[
+              ["Total Records", filteredRows.length],
+              ["Recorded Cost Total", money(totalCents / 100)],
+              ["Completed", completedCount],
+              ["Pending", pendingCount],
+              ...(!isMaintenance
+                ? [["In Progress", inProgressCount]]
+                : []),
+            ].map(([label, value]) => (
+              <div className="col-sm-6 col-lg" key={label}>
+                <div className="card h-100">
+                  <div className="card-body">
+                    <p className="text-muted mb-1">{label}</p>
+                    <h4 className="mb-0">{value}</h4>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-muted small">
+            Totals include all matching records in the selected period,
+            including future-dated records and the selected statuses.
+            Dashboard monthly cost includes completed maintenance and
+            repairs only through today.
+          </p>
+
+          <div className="card">
+            <div className="card-header bg-white">
+              <h5 className="mb-1">{reportTitle} · {period}</h5>
+              <small className="text-muted">{filterSummary}</small>
             </div>
-          </div>
-        </div>
 
-        <div className="col-md-6 col-xl-3">
-          <div className="card h-100">
-            <div className="card-body">
-              <p className="text-muted mb-1">Total Cost</p>
-              <h3 className="mb-0">
-                Rs. {totalCost.toLocaleString()}
-              </h3>
-            </div>
+            {filteredRows.length > 0 ? (
+              <div className="table-responsive">
+                <DataTable columns={columns} rows={filteredRows} />
+              </div>
+            ) : (
+              <div className="p-4 text-muted">
+                No records found for the selected filters.
+              </div>
+            )}
           </div>
-        </div>
+        </>
+      )}
 
-        <div className="col-md-6 col-xl-3">
-          <div className="card h-100">
-            <div className="card-body">
-              <p className="text-muted mb-1">Completed</p>
-              <h3 className="mb-0">{completedCount}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-md-6 col-xl-3">
-          <div className="card h-100">
-            <div className="card-body">
-              <p className="text-muted mb-1">Pending</p>
-              <h3 className="mb-0">{pendingCount}</h3>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header bg-white">
-          <h5 className="mb-0 text-capitalize">
-            {reportType}{" "}
-            {isMaintenance ? "Maintenance" : "Repair"} Report
-          </h5>
-        </div>
-
-        {filteredRows.length > 0 ? (
-          <DataTable columns={columns} rows={filteredRows} />
-        ) : (
-          <div className="text-center text-muted py-5">
-            <i className="bi bi-file-earmark-x fs-1 d-block mb-2"></i>
-            No records found for the selected filters.
-          </div>
-        )}
-      </div>
+      {createPortal(
+        <section className="fleet-report-print">
+          <h2>Fleet Maintenance Log System</h2>
+          <h3>{reportTitle} · {period}</h3>
+          <p>{filterSummary}</p>
+          <p>
+            Records: {filteredRows.length}
+            {" | "}Recorded Cost Total: {money(totalCents / 100)}
+            {" | "}Completed: {completedCount}
+            {" | "}Pending: {pendingCount}
+            {!isMaintenance && ` | In Progress: ${inProgressCount}`}
+          </p>
+          <p>
+            Includes all matching records in the selected period.
+          </p>
+          {!canExport ? (
+            <p>No report available to print.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  {exportFields.map(([key, label]) => (
+                    <th key={key}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => (
+                  <tr key={row.id}>
+                    {exportFields.map(([key]) => (
+                      <td key={key}>
+                        {key === "cost"
+                          ? row.cost.toFixed(2)
+                          : row[key] || "—"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>,
+        document.body
+      )}
     </>
   );
 }
