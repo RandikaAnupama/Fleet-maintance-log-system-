@@ -14,13 +14,22 @@ export default function Login() {
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
   const validate = () => {
-    const next = {};
-    if (!form.email.trim()) next.email = "Email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = "Enter a valid email.";
-    if (!form.password) next.password = "Password is required.";
-    else if (form.password.length < 6) next.password = "Password must contain at least 6 characters.";
-    return next;
-  };
+  const next = {};
+
+  if (!form.email.trim()) {
+    next.email = "Email is required.";
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    next.email = "Enter a valid email.";
+  }
+
+  if (!form.password) {
+    next.password = "Password is required.";
+  } else if (form.password.length < 6) {
+    next.password = "Password must contain at least 6 characters.";
+  }
+
+  return next;
+};
 
   const submit = async (event) => {
     event.preventDefault();
@@ -97,14 +106,7 @@ export default function Login() {
             Register here
           </Link>
         </div>
-
-        <div className="demo-box mt-4">
-          <strong>Demo accounts</strong>
-          <small>Admin: admin@fleet.com / admin123</small>
-          <small>User: user@fleet.com / user123</small>
-        </div>
       </div>
-
       <div className="login-visual">
         <div>
           <span className="eyebrow">UNIVERSITY SOFTWARE PROJECT</span>

@@ -1,176 +1,272 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
 import StatusBadge from "../components/StatusBadge";
+import api from "../services/api";
+import scheduleService from "../services/scheduleService";
 
 const emptyForm = {
-  vehicle: "",
-  service: "",
-  date: "",
-  garage: "",
-  cost: "",
-  status: "UPCOMING",
+  vehicle_id: "",
+  garage_id: "",
+  service_type: "",
+  due_date: "",
+  estimated_cost: "",
 };
+
+const emptyCompletion = {
+  service_date: "",
+  actual_cost: "",
+  next_service_date: "",
+  description: "",
+};
+
+function errorMessage(error) {
+  return (
+    error.response?.data?.message ||
+    error.message ||
+    "Request failed. Please try again."
+  );
+}
+
+function validCost(value) {
+  return (
+    /^\d+(\.\d{1,2})?$/.test(String(value)) &&
+    Number(value) > 0 &&
+    Number(value) <= 99999999.99
+  );
+}
 
 export default function ServiceSchedules() {
   const [schedules, setSchedules] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState(emptyForm);
+  const [vehicles, setVehicles] = useState([]);
+  const [garages, setGarages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [modal, setModal] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [completion, setCompletion] = useState(emptyCompletion);
+  const busyRef = useRef(false);
 
-  const handleChange = (event) => {
+  const loadData = async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [scheduleRows, vehicleResponse, garageResponse] =
+        await Promise.all([
+          scheduleService.getAll(),
+          api.get("/vehicles"),
+          api.get("/garages"),
+        ]);
+
+      setSchedules(scheduleRows);
+      setVehicles(vehicleResponse.data.vehicles);
+      setGarages(garageResponse.data.garages);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const closeModal = () => {
+    if (busyRef.current) return;
+    setModal(null);
+    setSelected(null);
+    setFormError("");
+  };
+
+  const openAdd = () => {
+    setSelected(null);
+    setForm({ ...emptyForm });
+    setFormError("");
+    setNotice("");
+    setModal("schedule");
+  };
+
+  const openEdit = (row) => {
+    setSelected(row);
+    setForm({
+      vehicle_id: String(row.vehicle_id),
+      garage_id: row.garage_id ? String(row.garage_id) : "",
+      service_type: row.service_type,
+      due_date: row.due_date,
+      estimated_cost: String(row.estimated_cost),
+    });
+    setFormError("");
+    setNotice("");
+    setModal("schedule");
+  };
+
+  const openComplete = (row) => {
+    setSelected(row);
+    setCompletion({ ...emptyCompletion });
+    setFormError("");
+    setNotice("");
+    setModal("complete");
+  };
+
+  const changeForm = (event) => {
     const { name, value } = event.target;
-
-    setFormData((currentFormData) => ({
-      ...currentFormData,
-      [name]: value,
-    }));
+    setForm((current) => ({ ...current, [name]: value }));
   };
 
-  const resetForm = () => {
-    setFormData(emptyForm);
-    setEditingId(null);
+  const changeCompletion = (event) => {
+    const { name, value } = event.target;
+    setCompletion((current) => ({ ...current, [name]: value }));
   };
 
-  const handleOpenAddModal = () => {
-    resetForm();
-    setShowModal(true);
+  const runMutation = async (operation, message, inModal = false) => {
+    if (busyRef.current) return;
+
+    busyRef.current = true;
+    setSaving(true);
+    setError("");
+    setFormError("");
+    setNotice("");
+
+    try {
+      await operation();
+      setModal(null);
+      setSelected(null);
+      setNotice(message);
+      await loadData();
+    } catch (err) {
+      if (inModal) {
+        setFormError(errorMessage(err));
+      } else {
+        setError(errorMessage(err));
+      }
+    } finally {
+      busyRef.current = false;
+      setSaving(false);
+    }
   };
 
-  const handleCloseModal = () => {
-    resetForm();
-    setShowModal(false);
-  };
-
-  const handleSubmit = (event) => {
+  const saveSchedule = (event) => {
     event.preventDefault();
+    setFormError("");
 
     if (
-      !formData.vehicle ||
-      !formData.service ||
-      !formData.date ||
-      !formData.garage ||
-      !formData.cost ||
-      !formData.status
+      !form.vehicle_id ||
+      !form.garage_id ||
+      !form.service_type.trim() ||
+      !form.due_date
     ) {
-      alert("Please fill in all required fields.");
+      setFormError("Please fill in all required fields.");
       return;
     }
 
-    const numericCost = Number(formData.cost);
-
-    if (Number.isNaN(numericCost) || numericCost <= 0) {
-      alert("Estimated cost must be greater than 0.");
-      return;
-    }
-
-    if (editingId !== null) {
-      setSchedules((currentSchedules) =>
-        currentSchedules.map((schedule) =>
-          schedule.id === editingId
-            ? {
-                ...schedule,
-                vehicle: formData.vehicle,
-                service: formData.service,
-                date: formData.date,
-                garage: formData.garage,
-                cost: numericCost,
-                status: formData.status,
-              }
-            : schedule
-        )
+    if (!validCost(form.estimated_cost)) {
+      setFormError(
+        "Enter an estimated cost greater than 0, up to 99,999,999.99, with at most 2 decimal places."
       );
-    } else {
-      const newSchedule = {
-        id: Date.now(),
-        vehicle: formData.vehicle,
-        service: formData.service,
-        date: formData.date,
-        garage: formData.garage,
-        cost: numericCost,
-        status: formData.status,
-      };
-
-      setSchedules((currentSchedules) => [
-        ...currentSchedules,
-        newSchedule,
-      ]);
-    }
-
-    handleCloseModal();
-  };
-
-  const handleEdit = (schedule) => {
-    setEditingId(schedule.id);
-
-    setFormData({
-      vehicle: schedule.vehicle,
-      service: schedule.service,
-      date: schedule.date,
-      garage: schedule.garage,
-      cost: String(schedule.cost),
-      status: schedule.status,
-    });
-
-    setShowModal(true);
-  };
-
-  const handleComplete = (id) => {
-    const confirmed = window.confirm(
-      "Mark this service schedule as completed?"
-    );
-
-    if (!confirmed) {
       return;
     }
 
-    setSchedules((currentSchedules) =>
-      currentSchedules.map((schedule) =>
-        schedule.id === id
-          ? {
-              ...schedule,
-              status: "COMPLETED",
-            }
-          : schedule
-      )
+    const data = {
+      vehicle_id: Number(form.vehicle_id),
+      garage_id: Number(form.garage_id),
+      service_type: form.service_type.trim(),
+      due_date: form.due_date,
+      estimated_cost: form.estimated_cost,
+    };
+
+    runMutation(
+      () =>
+        selected
+          ? scheduleService.update(selected.id, data)
+          : scheduleService.create(data),
+      selected ? "Schedule updated." : "Schedule created.",
+      true
     );
   };
 
-  const handleDelete = (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this service schedule?"
-    );
+  const completeSchedule = (event) => {
+    event.preventDefault();
+    setFormError("");
 
-    if (!confirmed) {
+    if (!completion.service_date || !validCost(completion.actual_cost)) {
+      setFormError("Enter a service date and a valid positive actual cost.");
       return;
     }
 
-    setSchedules((currentSchedules) =>
-      currentSchedules.filter((schedule) => schedule.id !== id)
+    if (
+      completion.next_service_date &&
+      completion.next_service_date < completion.service_date
+    ) {
+      setFormError("Next service date cannot be before the service date.");
+      return;
+    }
+
+    runMutation(
+      () =>
+        scheduleService.complete(selected.id, {
+          service_date: completion.service_date,
+          actual_cost: completion.actual_cost,
+          next_service_date: completion.next_service_date || null,
+          description: completion.description.trim() || null,
+        }),
+      "Service completed. The actual cost was saved in Maintenance Logs.",
+      true
     );
   };
+
+  const cancelSchedule = (row) => {
+    if (!window.confirm("Cancel this service schedule?")) return;
+
+    runMutation(
+      () => scheduleService.cancel(row.id),
+      "Schedule cancelled."
+    );
+  };
+
+  const deleteSchedule = (row) => {
+    if (!window.confirm("Permanently delete this service schedule?")) return;
+
+    runMutation(
+      () => scheduleService.remove(row.id),
+      "Schedule deleted."
+    );
+  };
+
+  const availableVehicles = vehicles.filter(
+    (vehicle) =>
+      vehicle.status === "ACTIVE" ||
+      (selected && Number(vehicle.id) === Number(selected.vehicle_id))
+  );
+
+  const availableGarages = garages.filter(
+    (garage) =>
+      garage.status === "ACTIVE" ||
+      (selected && Number(garage.id) === Number(selected.garage_id))
+  );
 
   const columns = [
+    { key: "vehicle_number", label: "Vehicle" },
+    { key: "service_type", label: "Service Type" },
+    { key: "due_date", label: "Scheduled Date" },
     {
-      key: "vehicle",
-      label: "Vehicle",
-    },
-    {
-      key: "service",
-      label: "Service Type",
-    },
-    {
-      key: "date",
-      label: "Scheduled Date",
-    },
-    {
-      key: "garage",
+      key: "garage_name",
       label: "Garage",
+      render: (row) => row.garage_name || "—",
     },
     {
-      key: "cost",
+      key: "estimated_cost",
       label: "Estimated Cost",
-      render: (row) => `Rs. ${Number(row.cost).toLocaleString()}`,
+      render: (row) =>
+        `Rs. ${Number(row.estimated_cost).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
     },
     {
       key: "status",
@@ -180,35 +276,58 @@ export default function ServiceSchedules() {
     {
       key: "actions",
       label: "Actions",
-      render: (row) => (
-        <div className="d-flex gap-2 flex-wrap">
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-primary"
-            onClick={() => handleEdit(row)}
-          >
-            Edit
-          </button>
+      render: (row) => {
+        const linked = row.maintenance_id != null;
+        const editable =
+          !linked && ["UPCOMING", "OVERDUE"].includes(row.status);
+        const deletable = !linked && row.status !== "COMPLETED";
 
-          {row.status !== "COMPLETED" && (
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-success"
-              onClick={() => handleComplete(row.id)}
-            >
-              Complete
-            </button>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            onClick={() => handleDelete(row.id)}
-          >
-            Delete
-          </button>
-        </div>
-      ),
+        return (
+          <div className="d-flex gap-2 flex-wrap">
+            {editable && (
+              <>
+                <button
+                  className="btn btn-sm btn-outline-primary"
+                  disabled={saving || loading}
+                  onClick={() => openEdit(row)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn btn-sm btn-outline-success"
+                  disabled={saving || loading}
+                  onClick={() => openComplete(row)}
+                >
+                  Complete
+                </button>
+                <button
+                  className="btn btn-sm btn-outline-warning"
+                  disabled={saving || loading}
+                  onClick={() => cancelSchedule(row)}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {deletable && (
+              <button
+                className="btn btn-sm btn-outline-danger"
+                disabled={saving || loading}
+                onClick={() => deleteSchedule(row)}
+              >
+                Delete
+              </button>
+            )}
+            {!deletable && (
+              <span className="text-muted">
+                {linked
+                  ? `Maintenance #${row.maintenance_id}`
+                  : "Completed"}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -216,12 +335,12 @@ export default function ServiceSchedules() {
     <>
       <PageHeader
         title="Service Schedule"
-        subtitle="Plan upcoming maintenance and reminders."
+        subtitle="Plan services and record their completion."
         action={
           <button
-            type="button"
             className="btn btn-primary"
-            onClick={handleOpenAddModal}
+            disabled={loading || saving || Boolean(error)}
+            onClick={openAdd}
           >
             <i className="bi bi-plus-lg me-1"></i>
             Schedule Service
@@ -229,213 +348,297 @@ export default function ServiceSchedules() {
         }
       />
 
+      {error && <div className="alert alert-danger">{error}</div>}
+      {notice && <div className="alert alert-success">{notice}</div>}
+
       <div className="card">
-        <DataTable columns={columns} rows={schedules} />
+        <div className="card-body border-bottom">
+          <button
+            className="btn btn-outline-secondary"
+            disabled={loading || saving}
+            onClick={loadData}
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="p-3">Loading schedules...</div>
+        ) : (
+          <>
+            {error && (
+              <div className="p-3 text-danger">
+                Could not refresh data. Click Refresh to try again.
+              </div>
+            )}
+            <DataTable columns={columns} rows={schedules} />
+          </>
+        )}
       </div>
 
-      {showModal && (
+      {modal && (
         <>
           <div
-            className="modal fade show d-block"
+            className="modal show d-block"
             tabIndex="-1"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="scheduleModalTitle"
           >
-            <div className="modal-dialog modal-lg">
+            <div className="modal-dialog modal-lg modal-dialog-scrollable">
               <div className="modal-content">
-                <form onSubmit={handleSubmit}>
+                <form
+                  onSubmit={
+                    modal === "complete" ? completeSchedule : saveSchedule
+                  }
+                >
                   <div className="modal-header">
-                    <h5 className="modal-title">
-                      {editingId !== null
-                        ? "Edit Service Schedule"
-                        : "Schedule Service"}
+                    <h5 className="modal-title" id="scheduleModalTitle">
+                      {modal === "complete"
+                        ? "Complete Service"
+                        : selected
+                          ? "Edit Service Schedule"
+                          : "Schedule Service"}
                     </h5>
-
                     <button
                       type="button"
                       className="btn-close"
-                      onClick={handleCloseModal}
+                      aria-label="Close"
+                      disabled={saving}
+                      onClick={closeModal}
                     ></button>
                   </div>
 
                   <div className="modal-body">
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleVehicle"
-                        className="form-label"
-                      >
-                        Vehicle
-                      </label>
+                    {formError && (
+                      <div className="alert alert-danger">{formError}</div>
+                    )}
 
-                      <select
-                        id="scheduleVehicle"
-                        className="form-select"
-                        name="vehicle"
-                        value={formData.vehicle}
-                        onChange={handleChange}
-                      >
-                        <option value="">Select Vehicle</option>
-                        <option value="CAB-1234">CAB-1234</option>
-                        <option value="CAD-5678">CAD-5678</option>
-                        <option value="CAB-4567">CAB-4567</option>
-                      </select>
-                    </div>
+                    <fieldset disabled={saving}>
+                      {modal === "schedule" ? (
+                        <>
+                          <div className="mb-3">
+                            <label htmlFor="vehicleId" className="form-label">
+                              Vehicle
+                            </label>
+                            <select
+                              id="vehicleId"
+                              name="vehicle_id"
+                              className="form-select"
+                              value={form.vehicle_id}
+                              onChange={changeForm}
+                              required
+                            >
+                              <option value="">Select Vehicle</option>
+                              {availableVehicles.map((vehicle) => (
+                                <option key={vehicle.id} value={vehicle.id}>
+                                  {vehicle.registration_number}
+                                  {vehicle.status !== "ACTIVE"
+                                    ? " (currently inactive)"
+                                    : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleService"
-                        className="form-label"
-                      >
-                        Service Type
-                      </label>
+                          <div className="mb-3">
+                            <label htmlFor="serviceType" className="form-label">
+                              Service Type
+                            </label>
+                            <input
+                              id="serviceType"
+                              name="service_type"
+                              className="form-control"
+                              list="serviceTypes"
+                              maxLength={100}
+                              value={form.service_type}
+                              onChange={changeForm}
+                              placeholder="Example: Oil Change"
+                              required
+                            />
+                            <datalist id="serviceTypes">
+                              {[
+                                "Oil Change",
+                                "Full Service",
+                                "Brake Inspection",
+                                "Engine Service",
+                                "Battery Check",
+                                "Tire Rotation",
+                              ].map((type) => (
+                                <option key={type} value={type} />
+                              ))}
+                            </datalist>
+                          </div>
 
-                      <select
-                        id="scheduleService"
-                        className="form-select"
-                        name="service"
-                        value={formData.service}
-                        onChange={handleChange}
-                      >
-                        <option value="">Select Service</option>
-                        <option value="Oil Change">Oil Change</option>
-                        <option value="Full Service">Full Service</option>
-                        <option value="Brake Inspection">
-                          Brake Inspection
-                        </option>
-                        <option value="Engine Service">
-                          Engine Service
-                        </option>
-                        <option value="Battery Check">
-                          Battery Check
-                        </option>
-                        <option value="Tire Rotation">
-                          Tire Rotation
-                        </option>
-                      </select>
-                    </div>
+                          <div className="mb-3">
+                            <label htmlFor="dueDate" className="form-label">
+                              Scheduled Date
+                            </label>
+                            <input
+                              id="dueDate"
+                              type="date"
+                              name="due_date"
+                              className="form-control"
+                              value={form.due_date}
+                              onChange={changeForm}
+                              required
+                            />
+                          </div>
 
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleDate"
-                        className="form-label"
-                      >
-                        Scheduled Date
-                      </label>
+                          <div className="mb-3">
+                            <label htmlFor="garageId" className="form-label">
+                              Garage
+                            </label>
+                            <select
+                              id="garageId"
+                              name="garage_id"
+                              className="form-select"
+                              value={form.garage_id}
+                              onChange={changeForm}
+                              required
+                            >
+                              <option value="">Select Garage</option>
+                              {availableGarages.map((garage) => (
+                                <option key={garage.id} value={garage.id}>
+                                  {garage.name}
+                                  {garage.status !== "ACTIVE"
+                                    ? " (currently inactive)"
+                                    : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                      <input
-                        id="scheduleDate"
-                        type="date"
-                        className="form-control"
-                        name="date"
-                        value={formData.date}
-                        onChange={handleChange}
-                      />
-                    </div>
+                          <div className="mb-3">
+                            <label htmlFor="estimatedCost" className="form-label">
+                              Estimated Cost (Rs.)
+                            </label>
+                            <input
+                              id="estimatedCost"
+                              type="number"
+                              name="estimated_cost"
+                              className="form-control"
+                              min="0.01"
+                              max="99999999.99"
+                              step="0.01"
+                              value={form.estimated_cost}
+                              onChange={changeForm}
+                              required
+                            />
+                          </div>
 
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleGarage"
-                        className="form-label"
-                      >
-                        Garage
-                      </label>
+                          <p className="text-muted mb-0">
+                            Upcoming and Overdue are determined by the scheduled
+                            date. Use Complete after the service is finished.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            <strong>{selected.vehicle_number}</strong>
+                            {" — "}
+                            {selected.service_type}
+                          </p>
 
-                      <select
-                        id="scheduleGarage"
-                        className="form-select"
-                        name="garage"
-                        value={formData.garage}
-                        onChange={handleChange}
-                      >
-                        <option value="">Select Garage</option>
-                        <option value="Auto Care">Auto Care</option>
-                        <option value="Speed Motors">
-                          Speed Motors
-                        </option>
-                        <option value="City Garage">
-                          City Garage
-                        </option>
-                      </select>
-                    </div>
+                          <div className="mb-3">
+                            <label htmlFor="serviceDate" className="form-label">
+                              Actual Service Date
+                            </label>
+                            <input
+                              id="serviceDate"
+                              type="date"
+                              name="service_date"
+                              className="form-control"
+                              value={completion.service_date}
+                              onChange={changeCompletion}
+                              required
+                            />
+                          </div>
 
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleCost"
-                        className="form-label"
-                      >
-                        Estimated Cost
-                      </label>
+                          <div className="mb-3">
+                            <label htmlFor="actualCost" className="form-label">
+                              Actual Cost (Rs.)
+                            </label>
+                            <input
+                              id="actualCost"
+                              type="number"
+                              name="actual_cost"
+                              className="form-control"
+                              min="0.01"
+                              max="99999999.99"
+                              step="0.01"
+                              value={completion.actual_cost}
+                              onChange={changeCompletion}
+                              required
+                            />
+                          </div>
 
-                      <input
-                        id="scheduleCost"
-                        type="number"
-                        className="form-control"
-                        name="cost"
-                        min="1"
-                        step="0.01"
-                        placeholder="Enter estimated cost"
-                        value={formData.cost}
-                        onChange={handleChange}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === "-" ||
-                            event.key === "e" ||
-                            event.key === "E" ||
-                            event.key === "+"
-                          ) {
-                            event.preventDefault();
-                          }
-                        }}
-                      />
-                    </div>
+                          <div className="mb-3">
+                            <label htmlFor="nextDate" className="form-label">
+                              Next Service Date (optional)
+                            </label>
+                            <input
+                              id="nextDate"
+                              type="date"
+                              name="next_service_date"
+                              className="form-control"
+                              min={completion.service_date || undefined}
+                              value={completion.next_service_date}
+                              onChange={changeCompletion}
+                            />
+                          </div>
 
-                    <div className="mb-3">
-                      <label
-                        htmlFor="scheduleStatus"
-                        className="form-label"
-                      >
-                        Status
-                      </label>
+                          <div className="mb-3">
+                            <label htmlFor="description" className="form-label">
+                              Description (optional)
+                            </label>
+                            <textarea
+                              id="description"
+                              name="description"
+                              className="form-control"
+                              rows={3}
+                              value={completion.description}
+                              onChange={changeCompletion}
+                            />
+                          </div>
 
-                      <select
-                        id="scheduleStatus"
-                        className="form-select"
-                        name="status"
-                        value={formData.status}
-                        onChange={handleChange}
-                      >
-                        <option value="UPCOMING">Upcoming</option>
-                        <option value="OVERDUE">Overdue</option>
-                        <option value="COMPLETED">Completed</option>
-                        <option value="CANCELLED">Cancelled</option>
-                      </select>
-                    </div>
+                          <p className="text-muted mb-0">
+                            Completing this service creates a Maintenance Log
+                            with the actual cost entered above.
+                          </p>
+                        </>
+                      )}
+                    </fieldset>
                   </div>
 
                   <div className="modal-footer">
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={handleCloseModal}
+                      disabled={saving}
+                      onClick={closeModal}
                     >
-                      Cancel
+                      Close
                     </button>
-
                     <button
                       type="submit"
                       className="btn btn-primary"
+                      disabled={saving}
                     >
-                      {editingId !== null
-                        ? "Update Schedule"
-                        : "Save Schedule"}
+                      {saving
+                        ? "Saving..."
+                        : modal === "complete"
+                          ? "Complete Service"
+                          : selected
+                            ? "Update Schedule"
+                            : "Save Schedule"}
                     </button>
                   </div>
                 </form>
               </div>
             </div>
           </div>
-
-          <div className="modal-backdrop fade show"></div>
+          <div className="modal-backdrop show"></div>
         </>
       )}
     </>

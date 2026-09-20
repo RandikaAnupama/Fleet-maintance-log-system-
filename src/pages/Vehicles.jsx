@@ -1,28 +1,85 @@
-import { useMemo, useState } from "react";
-import { vehiclesSeed } from "../data/mockData";
+import { useEffect, useMemo, useState } from "react";
+import api from "../services/api";
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 
-const emptyForm = { number: "", brand: "", model: "", year: "", mileage: "", status: "ACTIVE" };
+const emptyForm = {
+  number: "",
+  brand: "",
+  model: "",
+  year: "",
+  vehicle_type: "",
+  fuel_type: "",
+  mileage: "",
+  status: "ACTIVE",
+};
+
+const toRow = (vehicle) => ({
+  id: vehicle.id,
+  number: vehicle.registration_number ?? "",
+  brand: vehicle.make ?? "",
+  model: vehicle.model ?? "",
+  year: vehicle.manufacture_year ?? "",
+  vehicle_type: vehicle.vehicle_type ?? "",
+  fuel_type: vehicle.fuel_type ?? "",
+  mileage: Number(vehicle.mileage ?? 0),
+  status: vehicle.status ?? "ACTIVE",
+});
+
+const errorMessage = (error) =>
+  error.response?.data?.message ||
+  error.message ||
+  "Request failed. Please try again.";
 
 export default function Vehicles() {
-  const [rows, setRows] = useState(vehiclesSeed);
+  const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [show, setShow] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const filtered = useMemo(() => rows.filter((r) =>
-    `${r.number} ${r.brand} ${r.model}`.toLowerCase().includes(search.toLowerCase())
-  ), [rows, search]);
+  const loadVehicles = async () => {
+    setLoading(true);
+    setPageError("");
+
+    try {
+      const response = await api.get("/vehicles");
+      setRows(response.data.vehicles.map(toRow));
+    } catch (error) {
+      setPageError(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadVehicles();
+  }, []);
+
+  const filtered = useMemo(
+    () =>
+      rows.filter((row) =>
+        `${row.number} ${row.brand} ${row.model}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase())
+      ),
+    [rows, search]
+  );
 
   const openNew = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm });
     setErrors({});
+    setFormError("");
+    setNotice("");
     setShow(true);
   };
 
@@ -30,34 +87,110 @@ export default function Vehicles() {
     setEditingId(row.id);
     setForm({ ...row });
     setErrors({});
+    setFormError("");
+    setNotice("");
     setShow(true);
   };
 
+  const closeModal = () => {
+    if (!busy) setShow(false);
+  };
+
   const validate = () => {
-    const e = {};
-    if (!form.number.trim()) e.number = "Vehicle number is required.";
-    if (!form.brand.trim()) e.brand = "Brand is required.";
-    if (!form.model.trim()) e.model = "Model is required.";
-    if (!form.year || Number(form.year) < 1980) e.year = "Enter a valid year.";
-    if (form.mileage === "" || Number(form.mileage) < 0) e.mileage = "Mileage cannot be negative.";
-    return e;
-  };
+    const result = {};
+    const year = Number(form.year);
+    const mileage = Number(form.mileage);
 
-  const save = () => {
-    const e = validate();
-    setErrors(e);
-    if (Object.keys(e).length) return;
-
-    if (editingId) {
-      setRows(rows.map((r) => r.id === editingId ? { ...form, id: editingId, year: Number(form.year), mileage: Number(form.mileage) } : r));
-    } else {
-      setRows([...rows, { ...form, id: Date.now(), year: Number(form.year), mileage: Number(form.mileage) }]);
+    if (!form.number.trim()) {
+      result.number = "Vehicle number is required.";
     }
-    setShow(false);
+
+    if (!form.brand.trim()) {
+      result.brand = "Brand is required.";
+    }
+
+    if (!form.model.trim()) {
+      result.model = "Model is required.";
+    }
+
+    if (
+      String(form.year).trim() === "" ||
+      !Number.isInteger(year) ||
+      year < 1900 ||
+      year > new Date().getFullYear() + 1
+    ) {
+      result.year = "Enter a valid manufacture year.";
+    }
+
+    if (
+      String(form.mileage).trim() === "" ||
+      !Number.isFinite(mileage) ||
+      mileage < 0
+    ) {
+      result.mileage = "Enter a valid non-negative mileage.";
+    }
+
+    return result;
   };
 
-  const remove = (id) => {
-    if (window.confirm("Delete this vehicle record?")) setRows(rows.filter((r) => r.id !== id));
+  const save = async () => {
+    if (busy) return;
+
+    const validationErrors = validate();
+    setErrors(validationErrors);
+    setFormError("");
+
+    if (Object.keys(validationErrors).length) return;
+
+    const payload = {
+      registration_number: form.number.trim(),
+      make: form.brand.trim(),
+      model: form.model.trim(),
+      manufacture_year: Number(form.year),
+      vehicle_type: form.vehicle_type.trim() || null,
+      fuel_type: form.fuel_type.trim() || null,
+      mileage: Number(form.mileage),
+      status: form.status,
+    };
+
+    setBusy(true);
+
+    try {
+      if (editingId !== null) {
+        await api.put(`/vehicles/${editingId}`, payload);
+        setNotice("Vehicle updated successfully.");
+      } else {
+        await api.post("/vehicles", payload);
+        setNotice("Vehicle created successfully.");
+      }
+
+      setShow(false);
+      await loadVehicles();
+    } catch (error) {
+      setFormError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deactivate = async (row) => {
+    if (busy || row.status === "INACTIVE") return;
+
+    if (!window.confirm(`Deactivate vehicle ${row.number}?`)) return;
+
+    setBusy(true);
+    setPageError("");
+    setNotice("");
+
+    try {
+      await api.delete(`/vehicles/${row.id}`);
+      setNotice("Vehicle deactivated successfully.");
+      await loadVehicles();
+    } catch (error) {
+      setPageError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const columns = [
@@ -65,56 +198,177 @@ export default function Vehicles() {
     { key: "brand", label: "Brand" },
     { key: "model", label: "Model" },
     { key: "year", label: "Year" },
-    { key: "mileage", label: "Mileage", render: (r) => `${r.mileage.toLocaleString()} km` },
-    { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
     {
-      key: "actions", label: "Actions", render: (r) => (
+      key: "mileage",
+      label: "Mileage",
+      render: (row) => `${row.mileage.toLocaleString()} km`,
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (row) => <StatusBadge value={row.status} />,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (row) => (
         <div className="d-flex gap-2">
-          <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(r)}>Edit</button>
-          <button className="btn btn-sm btn-outline-danger" onClick={() => remove(r.id)}>Delete</button>
+          <button
+            className="btn btn-sm btn-outline-primary"
+            disabled={busy || loading}
+            onClick={() => openEdit(row)}
+          >
+            Edit
+          </button>
+          <button
+            className="btn btn-sm btn-outline-danger"
+            disabled={busy || loading || row.status === "INACTIVE"}
+            onClick={() => deactivate(row)}
+          >
+            Deactivate
+          </button>
         </div>
-      )
-    }
+      ),
+    },
   ];
 
   return (
     <>
       <PageHeader
         title="Vehicle Management"
-        subtitle="Create, view, update and delete vehicle records through the REST API."
-        action={<button className="btn btn-primary" onClick={openNew}><i className="bi bi-plus-lg me-1"></i>Add Vehicle</button>}
+        subtitle="Create, view, update and deactivate vehicle records."
+        action={
+          <button
+            className="btn btn-primary"
+            disabled={busy || loading}
+            onClick={openNew}
+          >
+            <i className="bi bi-plus-lg me-1"></i>
+            Add Vehicle
+          </button>
+        }
       />
 
-      <div className="card">
-        <div className="card-body border-bottom">
-          <input className="form-control search-box" placeholder="Search vehicle number, brand or model" value={search} onChange={(e) => setSearch(e.target.value)} />
+      {notice && (
+        <div className="alert alert-success" role="status">
+          {notice}
         </div>
-        <DataTable columns={columns} rows={filtered} />
+      )}
+
+      {pageError && (
+        <div className="alert alert-danger" role="alert">
+          {pageError}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-body border-bottom d-flex gap-2">
+          <input
+            className="form-control search-box"
+            placeholder="Search vehicle number, brand or model"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <button
+            className="btn btn-outline-secondary"
+            disabled={loading || busy}
+            onClick={loadVehicles}
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="card-body">Loading vehicles...</div>
+        ) : pageError ? (
+          <div className="card-body">
+            Could not refresh vehicle data. Click Refresh to try again.
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card-body">No vehicles found.</div>
+        ) : (
+          <DataTable columns={columns} rows={filtered} />
+        )}
       </div>
 
       <Modal
         show={show}
-        title={editingId ? "Edit Vehicle" : "Add Vehicle"}
-        onClose={() => setShow(false)}
-        footer={<><button className="btn btn-light" onClick={() => setShow(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Save</button></>}
+        title={editingId !== null ? "Edit Vehicle" : "Add Vehicle"}
+        onClose={closeModal}
+        footer={
+          <>
+            <button
+              className="btn btn-light"
+              disabled={busy}
+              onClick={closeModal}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={save}
+            >
+              {busy ? "Saving..." : "Save"}
+            </button>
+          </>
+        }
       >
+        {formError && (
+          <div className="alert alert-danger" role="alert">
+            {formError}
+          </div>
+        )}
+
         <div className="row g-3">
           {[
             ["number", "Vehicle Number", "text"],
             ["brand", "Brand", "text"],
             ["model", "Model", "text"],
-            ["year", "Year", "number"],
-            ["mileage", "Current Mileage", "number"]
+            ["year", "Manufacture Year", "number"],
+            ["vehicle_type", "Vehicle Type (optional)", "text"],
+            ["fuel_type", "Fuel Type (optional)", "text"],
+            ["mileage", "Current Mileage", "number"],
           ].map(([key, label, type]) => (
             <div className="col-md-6" key={key}>
-              <label className="form-label">{label}</label>
-              <input type={type} className={`form-control ${errors[key] ? "is-invalid" : ""}`} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+              <label className="form-label" htmlFor={`vehicle-${key}`}>
+                {label}
+              </label>
+              <input
+                id={`vehicle-${key}`}
+                type={type}
+                className={`form-control ${
+                  errors[key] ? "is-invalid" : ""
+                }`}
+                value={form[key]}
+                disabled={busy}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    [key]: event.target.value,
+                  }))
+                }
+              />
               <div className="invalid-feedback">{errors[key]}</div>
             </div>
           ))}
+
           <div className="col-md-6">
-            <label className="form-label">Status</label>
-            <select className="form-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+            <label className="form-label" htmlFor="vehicle-status">
+              Status
+            </label>
+            <select
+              id="vehicle-status"
+              className="form-select"
+              value={form.status}
+              disabled={busy}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  status: event.target.value,
+                }))
+              }
+            >
               <option value="ACTIVE">Active</option>
               <option value="SERVICE_DUE">Service Due</option>
               <option value="INACTIVE">Inactive</option>
