@@ -16,6 +16,7 @@ const myVehicleRoutes = require("./routes/myVehicleRoutes");
 const issueRoutes = require("./routes/issueRoutes");
 const myMaintenanceRoutes = require("./routes/myMaintenanceRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use("/api/my-vehicle", myVehicleRoutes);
 app.use("/api/issues", issueRoutes);
 app.use("/api/my-maintenance", myMaintenanceRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/profile", profileRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
