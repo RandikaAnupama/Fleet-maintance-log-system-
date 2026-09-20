@@ -44,79 +44,99 @@ const getUserById = async (req, res) => {
   }
 };
 
-const updateUserRole = async (req, res) => {
+const handleAccessUpdate = async (req, res, field) => {
   try {
-    const { id } = req.params;
-    const { role } = req.body;
+    const idText = String(req.params.id);
 
-    if (!["ADMIN", "USER"].includes(role)) {
+    if (
+      !/^[1-9]\d*$/.test(idText) ||
+      !Number.isSafeInteger(Number(idText))
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid user role.",
+        message: "Invalid user ID.",
       });
     }
 
-    const user = await userModel.getUserById(id);
+    const actorId = Number(req.user?.id);
 
-    if (!user) {
-      return res.status(404).json({
+    if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+      return res.status(401).json({
         success: false,
-        message: "User not found.",
+        message: "Invalid login session.",
       });
     }
 
-    await userModel.updateUserRole(id, role);
+    const body = req.body;
 
-    res.status(200).json({
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      Object.keys(body).length !== 1 ||
+      !Object.prototype.hasOwnProperty.call(body, field)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Send only the ${field} field.`,
+      });
+    }
+
+    const allowedValues =
+      field === "role"
+        ? ["ADMIN", "USER"]
+        : ["ACTIVE", "INACTIVE"];
+
+    if (!allowedValues.includes(body[field])) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid user ${field}.`,
+      });
+    }
+
+    await userModel.updateUserAccess(
+      actorId,
+      Number(idText),
+      field,
+      body[field]
+    );
+
+    return res.status(200).json({
       success: true,
-      message: "User role updated successfully.",
+      message: `User ${field} updated successfully.`,
     });
   } catch (error) {
-    console.error("Update user role error:", error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
 
-    res.status(500).json({
+    if (
+      error.code === "ER_LOCK_DEADLOCK" ||
+      error.code === "ER_LOCK_WAIT_TIMEOUT"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Another account update is in progress. Please try again.",
+      });
+    }
+
+    console.error("Update user access error:", error);
+
+    return res.status(500).json({
       success: false,
-      message: "Failed to update user role.",
+      message: "Failed to update user access.",
     });
   }
 };
 
-const updateUserStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
+const updateUserRole = (req, res) =>
+  handleAccessUpdate(req, res, "role");
 
-    if (!["ACTIVE", "INACTIVE"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user status.",
-      });
-    }
-
-    const user = await userModel.getUserById(id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found.",
-      });
-    }
-
-    await userModel.updateUserStatus(id, status);
-
-    res.status(200).json({
-      success: true,
-      message: "User status updated successfully.",
-    });
-  } catch (error) {
-    console.error("Update user status error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update user status.",
-    });
-  }
-};
+const updateUserStatus = (req, res) =>
+  handleAccessUpdate(req, res, "status");
 
 
 const updateAssignedVehicle = async (req, res) => {
