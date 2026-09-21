@@ -365,3 +365,30 @@ Do not rerun older migration files after importing the complete schema.
 ### Reports show no records
 
 Check the selected date or month and the other filters. Records must exist for that period.
+
+## API Documentation — Swagger
+
+Start the backend:
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+Open Swagger UI:
+
+http://localhost:5000/api-docs/
+
+OpenAPI JSON:
+
+http://localhost:5000/api-docs.json
+
+To test protected endpoints:
+1. Execute POST /api/auth/login with a registered account.
+2. Copy the token from the response.
+3. Click Authorize and paste only the token, without the Bearer prefix.
+4. Execute an endpoint permitted for the account's role.
+
+Authorization is cleared when the Swagger page is refreshed.
+Create, update and delete requests affect the connected database.
