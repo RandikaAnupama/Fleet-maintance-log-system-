@@ -17,6 +17,8 @@ const issueRoutes = require("./routes/issueRoutes");
 const myMaintenanceRoutes = require("./routes/myMaintenanceRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const profileRoutes = require("./routes/profileRoutes");
+const swaggerUi = require("swagger-ui-express");
+const openapi = require("./docs/openapi");
 
 const app = express();
 
@@ -31,6 +33,22 @@ app.use(
 
 app.use(morgan("dev"));
 app.use(express.json());
+
+app.get("/api-docs.json", (req, res) => {
+  res.json(openapi);
+});
+
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openapi, {
+    swaggerOptions: {
+      persistAuthorization: false,
+      validatorUrl: null,
+    },
+    customSiteTitle: "Fleet Maintenance API Documentation",
+  })
+);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/test", testRoutes);
