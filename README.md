@@ -55,7 +55,7 @@ src/
 
 ## Requirements
 
-- Node.js and npm
+- Node.js 24.18.0 with npm (tested version)
 - MySQL Server 8.0
 - MySQL Workbench or another MySQL client
 - Git
